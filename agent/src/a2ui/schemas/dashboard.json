@@ -2,142 +2,207 @@
   {
     "id": "root",
     "component": "Stack",
-    "gap": "md",
+    "gap": "lg",
     "children": [
-      "header",
-      "status-row",
-      "location-section",
-      "sensors-section"
+      "header-card",
+      "cameras-grid",
+      "callout",
+      "scope-chips",
+      "kpi-grid",
+      "charts-grid",
+      "table-section"
     ]
   },
+
   {
-    "id": "header",
+    "id": "cameras-grid",
+    "component": "Grid",
+    "columns": 3,
+    "gap": "md",
+    "children": ["camera-0", "camera-1", "camera-2"]
+  },
+  {
+    "id": "camera-0",
+    "component": "RobotCameraFeed",
+    "view": { "path": "/cameras/0/view" },
+    "label": { "path": "/cameras/0/label" },
+    "confidence": { "path": "/cameras/0/confidence" },
+    "target_in_frame": { "path": "/cameras/0/target_in_frame" },
+    "objects_visible": { "path": "/cameras/0/objects_visible" }
+  },
+  {
+    "id": "camera-1",
+    "component": "RobotCameraFeed",
+    "view": { "path": "/cameras/1/view" },
+    "label": { "path": "/cameras/1/label" },
+    "confidence": { "path": "/cameras/1/confidence" },
+    "target_in_frame": { "path": "/cameras/1/target_in_frame" },
+    "objects_visible": { "path": "/cameras/1/objects_visible" }
+  },
+  {
+    "id": "camera-2",
+    "component": "RobotCameraFeed",
+    "view": { "path": "/cameras/2/view" },
+    "label": { "path": "/cameras/2/label" },
+    "confidence": { "path": "/cameras/2/confidence" },
+    "target_in_frame": { "path": "/cameras/2/target_in_frame" },
+    "objects_visible": { "path": "/cameras/2/objects_visible" }
+  },
+
+  {
+    "id": "callout",
+    "component": "Callout",
+    "title": { "path": "/callout/title" },
+    "body": { "path": "/callout/body" },
+    "tone": { "path": "/callout/tone" }
+  },
+
+  {
+    "id": "header-card",
+    "component": "Card",
+    "child": "header-stack"
+  },
+  {
+    "id": "header-stack",
+    "component": "Stack",
+    "gap": "sm",
+    "children": ["header-eyebrow", "header-heading", "header-text"]
+  },
+  {
+    "id": "header-eyebrow",
+    "component": "Overline",
+    "text": { "path": "/eyebrow" }
+  },
+  {
+    "id": "header-heading",
     "component": "Heading",
     "level": "1",
-    "text": {
-      "path": "/robot_id"
-    }
+    "text": { "path": "/title" }
   },
   {
-    "id": "status-row",
-    "component": "Row",
-    "gap": "sm",
-    "children": [
-      "status-badge",
-      "battery-card",
-      "task-card"
-    ]
+    "id": "header-text",
+    "component": "Text",
+    "tone": "muted",
+    "text": { "path": "/subtitle" }
   },
+
   {
-    "id": "status-badge",
-    "component": "Badge",
-    "label": {
-      "path": "/status"
-    },
-    "tone": "positive"
+    "id": "scope-chips",
+    "component": "ChoiceChips",
+    "label": "Scope",
+    "value": { "path": "/scope/selected" },
+    "options": { "path": "/scope/options" }
   },
+
   {
-    "id": "task-card",
-    "component": "StatCard",
-    "label": "Current Task",
-    "value": {
-      "path": "/current_task"
-    }
-  },
-  {
-    "id": "battery-card",
-    "component": "StatCard",
-    "label": "Battery",
-    "value": {
-      "path": "/battery_percentage"
-    },
-    "caption": "%"
-  },
-  {
-    "id": "location-section",
-    "component": "Section",
-    "title": "Location",
-    "child": "location-grid"
-  },
-  {
-    "id": "location-grid",
+    "id": "kpi-grid",
     "component": "Grid",
-    "columns": 3,
-    "gap": "sm",
-    "children": [
-      "loc-x",
-      "loc-y",
-      "loc-z"
-    ]
+    "columns": 4,
+    "gap": "md",
+    "children": ["kpi-1", "kpi-2", "kpi-3", "kpi-4"]
   },
   {
-    "id": "loc-x",
+    "id": "kpi-1",
     "component": "StatCard",
-    "label": "X",
-    "value": {
-      "path": "/location/x"
-    },
-    "caption": "meters"
+    "label": { "path": "/kpis/0/label" },
+    "value": { "path": "/kpis/0/value" },
+    "delta": { "path": "/kpis/0/delta" },
+    "deltaTone": "positive",
+    "caption": { "path": "/kpis/0/caption" }
   },
   {
-    "id": "loc-y",
+    "id": "kpi-2",
     "component": "StatCard",
-    "label": "Y",
-    "value": {
-      "path": "/location/y"
-    },
-    "caption": "meters"
+    "label": { "path": "/kpis/1/label" },
+    "value": { "path": "/kpis/1/value" },
+    "delta": { "path": "/kpis/1/delta" },
+    "deltaTone": "positive",
+    "caption": { "path": "/kpis/1/caption" }
   },
   {
-    "id": "loc-z",
+    "id": "kpi-3",
     "component": "StatCard",
-    "label": "Z",
-    "value": {
-      "path": "/location/z"
-    },
-    "caption": "meters"
+    "label": { "path": "/kpis/2/label" },
+    "value": { "path": "/kpis/2/value" },
+    "delta": { "path": "/kpis/2/delta" },
+    "deltaTone": "positive",
+    "caption": { "path": "/kpis/2/caption" }
   },
   {
-    "id": "sensors-section",
-    "component": "Section",
-    "title": "Sensors",
-    "child": "sensors-grid"
+    "id": "kpi-4",
+    "component": "StatCard",
+    "label": { "path": "/kpis/3/label" },
+    "value": { "path": "/kpis/3/value" },
+    "delta": { "path": "/kpis/3/delta" },
+    "deltaTone": "negative",
+    "caption": { "path": "/kpis/3/caption" }
   },
+
   {
-    "id": "sensors-grid",
+    "id": "charts-grid",
     "component": "Grid",
-    "columns": 3,
-    "gap": "sm",
-    "children": [
-      "sens-temp",
-      "sens-lidar",
-      "sens-prox"
-    ]
+    "columns": 2,
+    "gap": "md",
+    "children": ["trend-section", "share-section"]
   },
   {
-    "id": "sens-temp",
-    "component": "StatCard",
-    "label": "Internal Temp",
-    "value": {
-      "path": "/sensors/internal_temp_c"
-    },
-    "caption": "\u00b0C"
+    "id": "trend-section",
+    "component": "Section",
+    "eyebrow": "TREND",
+    "title": "Monthly performance",
+    "child": "trend-card"
   },
   {
-    "id": "sens-lidar",
-    "component": "StatCard",
-    "label": "LiDAR",
-    "value": {
-      "path": "/sensors/lidar_status"
-    }
+    "id": "trend-card",
+    "component": "Card",
+    "child": "trend-chart"
   },
   {
-    "id": "sens-prox",
-    "component": "StatCard",
-    "label": "Proximity",
-    "value": {
-      "path": "/sensors/obstacle_proximity_m"
-    },
-    "caption": "meters"
+    "id": "trend-chart",
+    "component": "LineChart",
+    "height": 240,
+    "data": { "path": "/trend" }
+  },
+  {
+    "id": "share-section",
+    "component": "Section",
+    "eyebrow": "SHARE OF TOTAL",
+    "title": "Breakdown",
+    "child": "share-card"
+  },
+  {
+    "id": "share-card",
+    "component": "Card",
+    "child": "share-chart"
+  },
+  {
+    "id": "share-chart",
+    "component": "DonutChart",
+    "height": 240,
+    "data": { "path": "/share" }
+  },
+
+  {
+    "id": "table-section",
+    "component": "Section",
+    "eyebrow": "DETAIL",
+    "title": "Top rows",
+    "child": "table-card"
+  },
+  {
+    "id": "table-card",
+    "component": "Card",
+    "child": "table"
+  },
+  {
+    "id": "table",
+    "component": "DataTable",
+    "columns": [
+      { "key": "name", "label": "Name", "align": "left" },
+      { "key": "category", "label": "Category", "align": "left" },
+      { "key": "value", "label": "Value", "align": "right" },
+      { "key": "delta", "label": "Δ", "align": "right" }
+    ],
+    "rows": { "path": "/rows" }
   }
 ]
