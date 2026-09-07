@@ -35,121 +35,44 @@ DASHBOARD_SCHEMA = a2ui.load_schema(SCHEMA_DIR / "dashboard.json")
 SURFACE = "pdf-dashboard"
 
 
-# NOTE (Gemini typed-array fix): every list parameter on render_dashboard
-# below is typed as `list[<TypedDict>]`, NOT `list[dict]`. Gemini's
-# function-declaration validator rejects untyped arrays with
-# "parameters.properties[X].items: missing field". A TypedDict compiles to a
-# concrete object schema, so these arrays carry the `items` Gemini requires.
-# Keep them typed — do not loosen to `list[dict]`.
-class Kpi(TypedDict):
-    label: str
-    value: str
-    delta: str
-    caption: str
+class Location(TypedDict):
+    x: float
+    y: float
+    z: float
 
 
-class Point(TypedDict):
-    label: str
-    value: float
-
-
-class Row(TypedDict):
-    name: str
-    category: str
-    value: str
-    delta: str
-
-
-class ScopeOption(TypedDict):
-    label: str
-    value: str
-
-
-class Callout(TypedDict):
-    title: str
-    body: str
-    tone: str  # info | positive | warning | danger | neutral
-
-
-class Camera(TypedDict):
-    view: str  # top | wrist | front
-    label: str
-    confidence: float
-    target_in_frame: bool
-    objects_visible: int
+class Sensors(TypedDict):
+    internal_temp_c: float
+    lidar_status: str
+    obstacle_proximity_m: float
 
 
 @tool
 def render_dashboard(
-    eyebrow: str,
-    title: str,
-    subtitle: str,
-    kpis: list[Kpi],
-    trend: list[Point],
-    share: list[Point],
-    rows: list[Row],
-    scope_options: list[ScopeOption],
-    scope_selected: str,
-    callout: Callout,
-    cameras: list[Camera],
+    robot_id: str,
+    timestamp: str,
+    status: str,
+    battery_percentage: float,
+    location: Location,
+    speed_mps: float,
+    sensors: Sensors,
+    current_task: str,
 ) -> str:
-    """Render the interactive dashboard for the loaded PDF.
+    """Render the interactive dashboard for the robot telemetry.
 
     Pass data INLINE. Call ONCE per turn.
 
-    Required shapes:
-      - kpis: EXACTLY 4 cards. Each {label, value, delta, caption}.
-
-        STRICT FIELD RULES (very important; the badge breaks if you ignore):
-          * `value`   = the headline number, formatted ("$94,930M", "23.4%",
-                        "1.2M units"). 1–8 chars typically.
-          * `delta`   = JUST the magnitude of change. Format: "+X%", "-X%",
-                        or "" (empty string when there's no comparison).
-                        MAX 8 chars. NEVER prose. NEVER "vs. last quarter"
-                        or "vs. $89,498M". The arrow and color come from
-                        the renderer.
-                        Examples: "+6.1%", "-3%", "+12%", "+$2.4B", ""
-                        Bad:      "↑ vs. $89,498M in Q4 FY23"
-                                  "up 6% YoY"
-                                  "increased from $89,498M"
-          * `caption` = the comparison/context sentence ("vs. $89,498M in
-                        Q4 FY23", "Products $69,958M; Services $24,972M",
-                        "All-time high"). Up to ~80 chars. This is where
-                        the prose goes.
-
-      - trend: 6–12 points. {label, value:number}.
-      - share: 3–5 slices. {label, value:number}.
-      - rows: 5–8 table rows. Same delta rule applies: row.delta is
-        SHORT ("+6%", "-3%", ""). Verbose comparisons belong elsewhere.
-      - scope_options: 3–6 chips the user can click to re-scope. Each
-        {label, value}. Example for an Apple earnings PDF:
-          [{label:"Q4 FY24", value:"q4_fy24"},
-           {label:"FY24",    value:"fy24"},
-           {label:"By segment", value:"by_segment"},
-           {label:"By region",  value:"by_region"}]
-        Tailor the options to what THIS document actually supports.
-      - scope_selected: the `value` of the currently active option.
-      - callout: ONE banner pinned near the top. {title, body, tone}.
-        tone is one of info|positive|warning|danger|neutral and picks the
-        accent color. Every cognitive state has its own callout.
-      - cameras: 0, 1, or 3 robot camera feeds rendered as a 3-up grid above
-        the callout. Each {view, label, confidence, target_in_frame,
-        objects_visible}. view is one of top|wrist|front. Pass an EMPTY list
-        [] for states that don't need cameras (autonomous, monitoring); one
-        wrist camera for advisory; all three (top, wrist, front) for
-        intervention and emergency.
+    Required shapes match the robot telemetry JSON format directly.
     """
     payload = {
-        "eyebrow": eyebrow,
-        "title": title,
-        "subtitle": subtitle,
-        "kpis": kpis,
-        "trend": trend,
-        "share": share,
-        "rows": rows,
-        "scope": {"options": scope_options, "selected": scope_selected},
-        "callout": callout,
-        "cameras": cameras,
+        "robot_id": robot_id,
+        "timestamp": timestamp,
+        "status": status,
+        "battery_percentage": battery_percentage,
+        "location": location,
+        "speed_mps": speed_mps,
+        "sensors": sensors,
+        "current_task": current_task,
     }
     return a2ui.render(
         operations=[
@@ -170,36 +93,15 @@ what to render. The moment ANY JSON data appears in the conversation:
 3. Call render_dashboard() ONCE with the parameters, WITHOUT
    being asked. Do not ask what to render. Do not wait for instructions.
 
-The user may paste robot telemetry, financial data, logistics data, or anything else.
-Your job is to read the JSON and generate the CORRECT interface for that data.
-
-Fill the fixed dashboard fields creatively to fit the data:
-- eyebrow, title, subtitle: describe the data context
-- kpis: EXACTLY 4 cards summarizing the most important metrics
-- trend: 6-12 points of time-series or sequential data
-- share: 3-5 slices showing a breakdown of categorical data
-- rows: 5-8 table rows showing detailed records
-- scope_options: provide sensible filtering options
-- callout: highlight the most critical anomaly or insight from the data
-- cameras: pass an empty list [] unless the data explicitly describes robot camera feeds
-
-HOW THE CALLOUT AND CAMERAS RENDER:
-render_dashboard takes two extra arguments that paint the per-state banner
-and camera grid on the fixed dashboard. ALWAYS pass both.
-
-- callout: the per-state banner object {title, body, tone}.
-  tone must be one of info|positive|warning|danger|neutral.
-
-- cameras: a list of RobotCameraFeed objects, rendered as a 3-up grid ABOVE
-  the callout. Pass [] if the JSON does not contain camera data.
+The user will paste robot telemetry JSON (like robot_id, battery_percentage, sensors).
+Your job is to read the JSON and call `render_dashboard` with those exact parameters.
 
 LOGIC:
 - Read the JSON data
-- Determine the best way to visualize it
+- Extract the robot_id, timestamp, status, battery_percentage, location, speed_mps, sensors, and current_task.
 - Call render_dashboard() ONCE with the parameters
-- Ensure the interface looks appropriate for the context
 
-If no JSON data is provided: say "Paste any JSON data to generate the operations dashboard."
+If no JSON data is provided: say "Paste the robot telemetry JSON data to generate the operations dashboard."
 """
 
 
