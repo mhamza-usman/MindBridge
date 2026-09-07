@@ -6,9 +6,8 @@ def build_chat_model(**kwargs):
     base_url = "https://openrouter.ai/api/v1"
 
     free_models = [
-        "google/gemini-2.5-flash:free",
-        "mistralai/mistral-nemo:free",
-        "meta-llama/llama-3.1-8b-instruct:free",
+        "openrouter/free",
+        "google/gemma-4-31b-it:free",
     ]
 
     primary_model = ChatOpenAI(
