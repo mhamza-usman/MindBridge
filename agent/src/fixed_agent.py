@@ -19,12 +19,12 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import TypedDict
+from typing import TypedDict, Any
 
 from copilotkit import CopilotKitMiddleware, a2ui
 from langchain.agents import create_agent
 from langchain.tools import tool
-from langchain_google_genai import ChatGoogleGenerativeAI
+
 from langgraph.checkpoint.memory import MemorySaver
 
 from src.catalog import CATALOG_ID
@@ -208,12 +208,12 @@ If no JSON data is provided: say "Paste any JSON data to generate the operations
 # native SDK replays Gemini's thought_signature across tool turns, which the
 # OpenAI-compat path does not.
 #
-# Constructed lazily (not at import time): ChatGoogleGenerativeAI validates
+# Constructed lazily (not at import time): Any validates
 # the API key in its constructor and raises with no key. Building it lazily
 # lets `import main` succeed with OFFLINE=1 and no key (the offline branch of
 # build_fixed_agent never touches the live model). Online behavior is
 # unchanged — the client is built on the first build_fixed_agent() call.
-def _build_model() -> ChatGoogleGenerativeAI:
+def _build_model() -> Any:
     return build_chat_model()
 
 

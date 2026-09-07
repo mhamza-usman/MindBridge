@@ -50,7 +50,7 @@ from langchain.agents import create_agent
 from langchain.tools import ToolRuntime, tool
 from langchain_core.messages import SystemMessage
 from langchain_core.tools import tool as lc_tool
-from langchain_google_genai import ChatGoogleGenerativeAI
+
 from langgraph.checkpoint.memory import MemorySaver
 
 from src.catalog import CATALOG_ID, CATALOG_PROMPT
@@ -120,16 +120,16 @@ def render_a2ui(
 # tool_choice across multi-turn replay is proven viable on this SDK
 # (no thought_signature 400) — see FROZEN.md "LLM provider".
 #
-# Constructed lazily (not at import time): ChatGoogleGenerativeAI validates
+# Constructed lazily (not at import time): Any validates
 # the API key in its constructor and raises with no key. Building it on first
 # use lets `import main` succeed with OFFLINE=1 and no key. /dynamic still
 # requires a key — the client is built the first time the dynamic agent
 # actually runs (generate_a2ui or the agent's model node), so online behavior
 # is unchanged.
-_RENDER_MODEL: ChatGoogleGenerativeAI | None = None
+_RENDER_MODEL: Any | None = None
 
 
-def _render_model() -> ChatGoogleGenerativeAI:
+def _render_model() -> Any:
     global _RENDER_MODEL
     if _RENDER_MODEL is None:
         _RENDER_MODEL = build_chat_model(temperature=0)
@@ -137,7 +137,7 @@ def _render_model() -> ChatGoogleGenerativeAI:
 
 
 class _LazyRenderModel:
-    """Defers ChatGoogleGenerativeAI construction until the dynamic agent's
+    """Defers Any construction until the dynamic agent's
     model node first touches it (profile / bind_tools / bind / invoke).
 
     create_agent stores the model at build time but only calls into it at

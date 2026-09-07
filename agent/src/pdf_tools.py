@@ -16,10 +16,10 @@ from __future__ import annotations
 import json
 import os
 import re
-from typing import TypedDict
+from typing import TypedDict, Any
 
 from langchain.tools import tool
-from langchain_google_genai import ChatGoogleGenerativeAI
+
 
 from src.llm import build_chat_model
 
@@ -27,15 +27,15 @@ from src.llm import build_chat_model
 # Gemini 3.5 Flash via the native Google Gen AI SDK — same provider as the
 # primary agents (see main.py / FROZEN.md "LLM provider").
 #
-# Constructed lazily (not at import time): ChatGoogleGenerativeAI validates
+# Constructed lazily (not at import time): Any validates
 # the API key in its constructor and raises with no key. Building it on first
 # use lets `import main` succeed with OFFLINE=1 and no key (the OFFLINE /fixed
 # path never reaches these tools). Online behavior is unchanged — the client
 # is built the first time a tool runs, then cached.
-_EXTRACTOR: ChatGoogleGenerativeAI | None = None
+_EXTRACTOR: Any | None = None
 
 
-def _extractor() -> ChatGoogleGenerativeAI:
+def _extractor() -> Any:
     global _EXTRACTOR
     if _EXTRACTOR is None:
         _EXTRACTOR = build_chat_model(temperature=0)
