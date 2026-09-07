@@ -43,11 +43,7 @@ export default function RootLayout({
     <html lang="en" className={`${jakarta.variable} ${splineMono.variable}`}>
       <head>
         <title>MindBridge — Generative Robot Operations Interface</title>
-        <link
-          rel="icon"
-          type="image/svg+xml"
-          href="/copilotkit-logo-mark.svg"
-        />
+
       </head>
       <body className={`antialiased`}>
         <ThemeProvider>{children}</ThemeProvider>

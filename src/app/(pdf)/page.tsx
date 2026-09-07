@@ -89,34 +89,10 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="mt-14 grid md:grid-cols-3 gap-3">
-          <Spec
-            k="Frontend"
-            v="Next.js 16 · React 19 · Tailwind v4 · @copilotkit/react-core/v2"
-          />
-          <Spec
-            k="Bridge"
-            v="@copilotkit/runtime (v2) · @ag-ui/client · a2ui middleware"
-          />
-          <Spec
-            k="Backend"
-            v="Python · LangChain · LangGraph · FastAPI · ag-ui-langgraph"
-          />
-        </section>
+
       </main>
 
-      <footer className="border-t border-[var(--line)] py-6 mt-10">
-        <div className="max-w-[1320px] mx-auto px-6 text-xs text-[var(--muted)] flex items-center justify-between">
-          <span>
-            Drop your design tokens into{" "}
-            <code className="mono px-1.5 py-0.5 rounded bg-[var(--surface-soft)] border border-[var(--line)] text-[11px]">
-              src/a2ui/theme.css
-            </code>{" "}
-            to re-skin every surface.
-          </span>
-          <span className="mono">v0.2</span>
-        </div>
-      </footer>
+
     </>
   );
 }

@@ -20,7 +20,7 @@ import { Split } from "@/components/pdf-analyst/Split";
  * updates in place forever as the robot's NeSyConf sweeps cognitive states. */
 
 const ROBOT_API =
-  process.env.NEXT_PUBLIC_ROBOT_API ?? "http://localhost:8123";
+  process.env.NEXT_PUBLIC_ROBOT_API ?? "/api";
 
 const SPEEDS = [
   { label: "0.5×", ms: 3000 },

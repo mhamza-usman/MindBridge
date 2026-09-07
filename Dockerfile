@@ -10,8 +10,7 @@ COPY src/ ./src/
 COPY public/ ./public/
 COPY next.config.ts tsconfig.json postcss.config.mjs ./
 COPY showcase.json ./showcase.json
-
-# pdf-analyst default swap: no route surgery needed. Both copilotkit routes
+COPY other-examples/ ./other-examples/
 # (src/app/api/copilotkit/[[...slug]]/route.ts for the legal example and
 # src/app/api/copilotkit-pdf/route.ts for the pdf default) are already
 # AG-UI HttpAgent based and talk to the FastAPI agent on :8123 — see the

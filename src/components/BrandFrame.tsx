@@ -36,8 +36,8 @@ export interface BrandFrameProps {
  * handles the chat / app split below this header.
  */
 export function BrandFrame({
-  productName = "CopilotKit",
-  logoSrc = "/copilotkit-logo-mark.svg",
+  productName = "MindBridge",
+  logoSrc = "",
   accentColor,
   children,
 }: BrandFrameProps) {
