@@ -6,6 +6,9 @@ import { getDefaultContract } from "../contract/loader";
 import { evaluateContract } from "../contract/evaluator";
 import { AssuranceStateMachine } from "../domain/stateMachine";
 import { EvidenceSnapshot, AssuranceState, NeSyMode } from "../domain/types";
+import { IncidentRecorder } from "../incidents/recorder";
+import { IncidentStore } from "../incidents/store";
+import { IncidentBundle } from "../incidents/types";
 
 const STATE_COLORS: Record<AssuranceState, string> = {
   Autonomous: 'var(--auto)', Degraded: 'var(--deg)', Supervised: 'var(--sup)', Unknown: 'var(--unk)', Blocked: 'var(--blk)'
@@ -20,10 +23,19 @@ export default function AssuranceShell() {
   const [scenario, setScenario] = useState<'nominal'|'stale'|'conflict'|'unknown'>('nominal');
   const [evidence, setEvidence] = useState<EvidenceSnapshot | null>(null);
   const [logMsg, setLogMsg] = useState("");
+  
+  // Replay view state
+  const [incidents, setIncidents] = useState<IncidentBundle[]>([]);
 
   const source = useMemo(() => new SyntheticSource(), []);
   const contract = useMemo(() => getDefaultContract(), []);
   const sm = useMemo(() => new AssuranceStateMachine(), []);
+  const recorder = useMemo(() => new IncidentRecorder(), []);
+
+  useEffect(() => {
+    recorder.start(contract.mission, contract.version, 'synthetic');
+    return () => recorder.stop();
+  }, [recorder, contract]);
 
   useEffect(() => {
     source.setScenario(scenario);
@@ -41,8 +53,31 @@ export default function AssuranceShell() {
     res = sm.tick(evidence.t, checks, conflict, nesyMode);
   }
 
+  // Record state changes
+  useEffect(() => {
+    if (res && evidence) {
+      recorder.recordState(res.state, res.why, res.recommendation, res.known, res.unknown, res.violated);
+    }
+  }, [res?.state, res?.why.join(','), recorder, evidence]); // trigger when state or why changes
+
+  // Fetch incidents when entering replay view
+  useEffect(() => {
+    if (view === 'replay') {
+      setIncidents(IncidentStore.getAll());
+    }
+  }, [view]);
+
   const logAction = (act: string) => {
     setLogMsg(`${act} at ${new Date().toLocaleTimeString()}. Logged only, robot not touched.`);
+    recorder.recordOperatorAction(act);
+  };
+
+  const exportJSON = (bundle: IncidentBundle) => {
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(bundle, null, 2));
+    const dlAnchorElem = document.createElement('a');
+    dlAnchorElem.setAttribute("href", dataStr);
+    dlAnchorElem.setAttribute("download", `${bundle.incident_id}.json`);
+    dlAnchorElem.click();
   };
 
   return (
@@ -179,7 +214,27 @@ export default function AssuranceShell() {
           <div className="v2-view on">
             <div className="v2-panel v2-c12">
               <h2>Incident replay</h2>
-              <p style={{color:'var(--ink2)', fontSize:'12px'}}>Phase 4 replay component placeholder.</p>
+              {incidents.length === 0 ? (
+                <p style={{color:'var(--ink2)', fontSize:'12px'}}>No incidents recorded yet. Generate some state changes or operator actions in the Live view.</p>
+              ) : (
+                incidents.map(inc => (
+                  <div key={inc.incident_id} style={{borderBottom:'1px solid var(--line)', padding:'10px 0'}}>
+                    <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+                      <b>{inc.incident_id}</b>
+                      <button className="v2-btn" onClick={() => exportJSON(inc)}>Export JSON</button>
+                    </div>
+                    <p style={{fontSize:'12px', color:'var(--ink2)', margin:'4px 0'}}>Mission: {inc.mission} | Started: {new Date(inc.started_at).toLocaleTimeString()}</p>
+                    <div style={{background:'rgba(255,255,255,.5)', borderRadius:'8px', padding:'10px', marginTop:'8px', maxHeight:'200px', overflowY:'auto'}}>
+                      {inc.events.map((e, idx) => (
+                        <div key={idx} style={{fontFamily:'var(--mono)', fontSize:'11px', marginBottom:'4px'}}>
+                          <span style={{color:'var(--accent)'}}>{new Date(e.t).toLocaleTimeString()}</span>{' '}
+                          <b>{e.type}</b>: {JSON.stringify(e.data)}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         )}
