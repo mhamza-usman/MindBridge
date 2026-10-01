@@ -9,6 +9,7 @@ import { EvidenceSnapshot, AssuranceState, NeSyMode } from "../domain/types";
 import { IncidentRecorder } from "../incidents/recorder";
 import { IncidentStore } from "../incidents/store";
 import { IncidentBundle } from "../incidents/types";
+import { evaluateFusion, FusionInput } from "../fusion/detector";
 
 const STATE_COLORS: Record<AssuranceState, string> = {
   Autonomous: 'var(--auto)', Degraded: 'var(--deg)', Supervised: 'var(--sup)', Unknown: 'var(--unk)', Blocked: 'var(--blk)'
@@ -47,10 +48,46 @@ export default function AssuranceShell() {
   const nesyMode: NeSyMode = scenario === 'stale' || scenario === 'conflict' ? 'Advisory' : scenario === 'unknown' ? 'Emergency' : 'Autonomous';
   let res = null;
   let checks = {};
+  let fusionReport = null;
+  
   if (evidence) {
-    checks = evaluateContract(contract, evidence);
+    let modifiedEvidence = { ...evidence };
+    
+    // Inject fusion result into evidence
     const conflict = scenario === 'conflict';
-    res = sm.tick(evidence.t, checks, conflict, nesyMode);
+    if (conflict) {
+      const mockFusionInput: FusionInput = {
+        syncSkewMs: 10,
+        persistenceCount: 5,
+        cameraSeesObject: true,
+        lidarSeesObject: false,
+        exposureSaturated: true,
+        brightPatchOverlaps: true,
+        floorIsPolished: true,
+        objectAbsentEarlier: true,
+        imageSharpnessLow: false,
+        lidarIntensityDropped: false,
+        blurIncreasing: false,
+        calibrationOld: false,
+        sameOffsetOtherObjects: false,
+        recentBump: false,
+        objectPresentEarlier: false,
+        shapeMatchesKnown: false,
+        heightBelowLidar: false
+      };
+      fusionReport = evaluateFusion(mockFusionInput);
+      modifiedEvidence.items['sensors_agree'] = {
+        id: 'sensors_agree',
+        label: 'Sensors agree',
+        value: fusionReport.unresolved ? 'Unresolved conflict' : fusionReport.rankedCauses[0]?.name || 'Conflict detected',
+        status: fusionReport.unresolved ? 'unk' : 'bad',
+        source: 'synthetic',
+        t: evidence.t
+      };
+    }
+    
+    checks = evaluateContract(contract, modifiedEvidence);
+    res = sm.tick(modifiedEvidence.t, checks, conflict, nesyMode);
   }
 
   // Record state changes
@@ -193,7 +230,48 @@ export default function AssuranceShell() {
           <div className="v2-view on">
             <div className="v2-panel v2-c12">
               <h2>Sensor fusion check</h2>
-              <p style={{color:'var(--ink2)', fontSize:'12px'}}>Phase 5 fusion detector component placeholder.</p>
+              {fusionReport ? (
+                <>
+                  <p style={{color:'var(--ink2)', fontSize:'13px', marginBottom:'16px'}}>
+                    Camera and LiDAR disagree. Location: <b>{fusionReport.conflictLocation}</b>
+                  </p>
+                  {fusionReport.syncFault ? (
+                    <div className="v2-rec" style={{'--c': 'var(--blk)'} as any}>Sync fault: cannot align sensors.</div>
+                  ) : (
+                    <div style={{display:'flex', gap:'20px'}}>
+                      <div style={{flex:1}}>
+                        <h3 style={{fontSize:'12px', fontWeight:600, color:'var(--ink2)'}}>Ranked causes</h3>
+                        {fusionReport.rankedCauses.map((c, i) => (
+                          <div key={i} style={{border:'1px solid var(--line)', borderRadius:'12px', padding:'12px', marginBottom:'10px', background: i === 0 && !fusionReport.unresolved ? 'rgba(255,255,255,.8)' : 'rgba(255,255,255,.4)'}}>
+                            <div style={{display:'flex', justifyContent:'space-between', marginBottom:'8px'}}>
+                              <b>{i+1}. {c.name}</b>
+                              <span style={{fontSize:'11px', color:'var(--ink2)'}}>{c.checksMet} of {c.checksTotal} checks</span>
+                            </div>
+                            <div style={{display:'flex', gap:'6px', flexWrap:'wrap'}}>
+                              {c.evidence.map((ev, j) => (
+                                <span key={j} style={{fontSize:'10px', padding:'2px 8px', borderRadius:'6px', background: ev.met ? 'var(--auto)' : '#fff', color: ev.met ? '#fff' : 'var(--ink2)', border: '1px solid ' + (ev.met ? 'var(--auto)' : 'var(--line)')}}>
+                                  {ev.label}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <div style={{width:'260px'}}>
+                        <h3 style={{fontSize:'12px', fontWeight:600, color:'var(--ink2)'}}>Suggested checks</h3>
+                        <ul className="v2-why" style={{'--c': 'var(--ink)'} as any}>
+                          {fusionReport.suggestedChecks.map((sc, i) => <li key={i}>{sc}</li>)}
+                        </ul>
+                        <div style={{marginTop:'20px', padding:'10px', borderRadius:'8px', background:'rgba(20,30,50,.04)', fontSize:'12px'}}>
+                          <b>MindBridge cannot tell:</b><br/>{fusionReport.cannotTell}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p style={{color:'var(--ink2)', fontSize:'12px'}}>No sensor conflict active. Select the "Camera and LiDAR conflict" scenario.</p>
+              )}
             </div>
           </div>
         )}
