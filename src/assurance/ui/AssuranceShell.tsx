@@ -10,6 +10,8 @@ import { IncidentRecorder } from "../incidents/recorder";
 import { IncidentStore } from "../incidents/store";
 import { IncidentBundle } from "../incidents/types";
 import { evaluateFusion, FusionInput } from "../fusion/detector";
+import { FleetView } from "./fleet/FleetView";
+import { createSyntheticFleet } from "../fleet/syntheticFleet";
 
 const STATE_COLORS: Record<AssuranceState, string> = {
   Autonomous: 'var(--auto)', Degraded: 'var(--deg)', Supervised: 'var(--sup)', Unknown: 'var(--unk)', Blocked: 'var(--blk)'
@@ -27,6 +29,18 @@ export default function AssuranceShell() {
   
   // Replay view state
   const [incidents, setIncidents] = useState<IncidentBundle[]>([]);
+
+  // Fleet flag — read from env or query string
+  const fleetEnabled =
+    typeof window !== 'undefined'
+      ? new URLSearchParams(window.location.search).get('fleet') === '1'
+        || process.env.NEXT_PUBLIC_FLEET_VIEW === 'true'
+      : process.env.NEXT_PUBLIC_FLEET_VIEW === 'true';
+
+  const fleetAggregator = useMemo(
+    () => fleetEnabled ? createSyntheticFleet() : null,
+    [fleetEnabled]
+  );
 
   const source = useMemo(() => new SyntheticSource(), []);
   const contract = useMemo(() => getDefaultContract(), []);
@@ -316,6 +330,27 @@ export default function AssuranceShell() {
             </div>
           </div>
         )}
+
+        {view === 'fleet' && (
+          <div className="v2-view on">
+            {fleetEnabled && fleetAggregator ? (
+              <div style={{gridColumn:'span 12'}}>
+                <FleetView
+                  aggregator={fleetAggregator}
+                  onSelectRobot={(id) => {
+                    // Phase 7 spec: robot card click routes to Live view with that robot's evidence
+                    setScenario('conflict'); // RB-04 uses conflict scenario data
+                    setView('live');
+                  }}
+                />
+              </div>
+            ) : (
+              <div className="v2-panel v2-c12">
+                <p style={{color:'var(--ink2)', fontSize:'12px'}}>Fleet view is disabled. Add <code>?fleet=1</code> to the URL or set <code>NEXT_PUBLIC_FLEET_VIEW=true</code>.</p>
+              </div>
+            )}
+          </div>
+        )}
       </main>
 
       <nav className="v2-dock" aria-label="Views">
@@ -324,7 +359,7 @@ export default function AssuranceShell() {
         <button className={view === 'contract' ? 'on' : ''} onClick={() => setView('contract')}><span aria-hidden="true">☰</span><span className="tip">Contract</span></button>
         <button className={view === 'replay' ? 'on' : ''} onClick={() => setView('replay')}><span aria-hidden="true">↺</span><span className="tip">Replay</span></button>
         <button className={view === 'sources' ? 'on' : ''} onClick={() => setView('sources')}><span aria-hidden="true">⌨</span><span className="tip">Sources</span></button>
-        <button disabled><span aria-hidden="true">▦</span><span className="tip">Fleet (later)</span></button>
+        <button disabled={!fleetEnabled} className={view === 'fleet' ? 'on' : ''} onClick={() => fleetEnabled && setView('fleet')} title={fleetEnabled ? undefined : 'Fleet (disabled — add ?fleet=1 to enable)'}><span aria-hidden="true">▦</span><span className="tip">{fleetEnabled ? 'Fleet' : 'Fleet (disabled)'}</span></button>
       </nav>
     </div>
   );
