@@ -53,7 +53,18 @@ const STATE_META: Record<
   emergency: { label: "EMERGENCY", color: "#7f1d1d", bg: "#fecaca" },
 };
 
-export default function LivePage() {
+import { useSearchParams } from "next/navigation";
+import AssuranceShell from "../../../../assurance/ui/AssuranceShell";
+
+export default function Page() {
+  const searchParams = useSearchParams();
+  const isV2 = searchParams.get("ui") === "v2" || process.env.NEXT_PUBLIC_UI_V2 === "true";
+  
+  if (isV2) return <AssuranceShell />;
+  return <LivePage />;
+}
+
+function LivePage() {
   const [running, setRunning] = useState(true);
   const [speedMs, setSpeedMs] = useState(1500);
   const [frame, setFrame] = useState<(Telemetry & { state: string }) | null>(
