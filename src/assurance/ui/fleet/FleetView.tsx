@@ -14,16 +14,30 @@ const STATE_ICON: Record<AssuranceState, string> = {
 
 interface FleetViewProps {
   aggregator: IFleetAggregator;
-  onSelectRobot?: (robotId: string) => void; // routes to Live view
+  onSelectRobot?: (robotId: string) => void;
+  /** Optional: SSE URL to receive fleet updates from the server stream (/api/fleet/stream). */
+  sseUrl?: string;
 }
 
-export function FleetView({ aggregator, onSelectRobot }: FleetViewProps) {
+export function FleetView({ aggregator, onSelectRobot, sseUrl }: FleetViewProps) {
   const [snap, setSnap] = useState<FleetSnapshot>(aggregator.getSnapshot());
   const [logMsg, setLogMsg] = useState('');
 
+  // In-process subscription (primary)
   useEffect(() => {
     return aggregator.subscribe(setSnap);
   }, [aggregator]);
+
+  // SSE stream subscription (optional — for external consumers or multi-tab)
+  useEffect(() => {
+    if (!sseUrl) return;
+    const es = new EventSource(sseUrl);
+    es.onmessage = (e) => {
+      try { setSnap(JSON.parse(e.data)); } catch { /* ignore malformed */ }
+    };
+    es.onerror = () => es.close();
+    return () => es.close();
+  }, [sseUrl]);
 
   const logAction = useCallback((action: string, robotId?: string) => {
     aggregator.logOperatorAction(action, robotId);

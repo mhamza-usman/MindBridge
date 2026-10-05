@@ -12,6 +12,7 @@ import { IncidentBundle } from "../incidents/types";
 import { evaluateFusion, FusionInput } from "../fusion/detector";
 import { FleetView } from "./fleet/FleetView";
 import { createSyntheticFleet } from "../fleet/syntheticFleet";
+import { ReplayScrubber } from "./ReplayScrubber";
 
 const STATE_COLORS: Record<AssuranceState, string> = {
   Autonomous: 'var(--auto)', Degraded: 'var(--deg)', Supervised: 'var(--sup)', Unknown: 'var(--unk)', Blocked: 'var(--blk)'
@@ -29,6 +30,7 @@ export default function AssuranceShell() {
   
   // Replay view state
   const [incidents, setIncidents] = useState<IncidentBundle[]>([]);
+  const [selectedIncident, setSelectedIncident] = useState<IncidentBundle | null>(null);
 
   // Fleet flag — read from env or query string
   const fleetEnabled =
@@ -309,23 +311,36 @@ export default function AssuranceShell() {
               {incidents.length === 0 ? (
                 <p style={{color:'var(--ink2)', fontSize:'12px'}}>No incidents recorded yet. Generate some state changes or operator actions in the Live view.</p>
               ) : (
-                incidents.map(inc => (
-                  <div key={inc.incident_id} style={{borderBottom:'1px solid var(--line)', padding:'10px 0'}}>
-                    <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-                      <b>{inc.incident_id}</b>
-                      <button className="v2-btn" onClick={() => exportJSON(inc)}>Export JSON</button>
-                    </div>
-                    <p style={{fontSize:'12px', color:'var(--ink2)', margin:'4px 0'}}>Mission: {inc.mission} | Started: {new Date(inc.started_at).toLocaleTimeString()}</p>
-                    <div style={{background:'rgba(255,255,255,.5)', borderRadius:'8px', padding:'10px', marginTop:'8px', maxHeight:'200px', overflowY:'auto'}}>
-                      {inc.events.map((e, idx) => (
-                        <div key={idx} style={{fontFamily:'var(--mono)', fontSize:'11px', marginBottom:'4px'}}>
-                          <span style={{color:'var(--accent)'}}>{new Date(e.t).toLocaleTimeString()}</span>{' '}
-                          <b>{e.type}</b>: {JSON.stringify(e.data)}
-                        </div>
-                      ))}
-                    </div>
+                <>
+                  {/* Incident list */}
+                  <div style={{marginBottom:'12px', display:'flex', flexWrap:'wrap', gap:'8px'}}>
+                    {incidents.map(inc => (
+                      <button key={inc.incident_id} className="v2-btn"
+                        style={{background: selectedIncident?.incident_id === inc.incident_id ? 'var(--accent)' : undefined,
+                                color: selectedIncident?.incident_id === inc.incident_id ? '#fff' : undefined}}
+                        onClick={() => setSelectedIncident(inc)}>
+                        {inc.incident_id.slice(-8)} · {inc.events.length} events
+                      </button>
+                    ))}
                   </div>
-                ))
+
+                  {/* Scrubber for selected incident */}
+                  {selectedIncident ? (
+                    <ReplayScrubber
+                      incident={selectedIncident}
+                      onClose={() => setSelectedIncident(null)}
+                    />
+                  ) : (
+                    <p style={{fontSize:'12px', color:'var(--ink2)'}}>Select an incident above to replay it.</p>
+                  )}
+
+                  {/* Export */}
+                  {selectedIncident && (
+                    <button className="v2-btn" style={{marginTop:'8px'}} onClick={() => exportJSON(selectedIncident)}>
+                      Export JSON
+                    </button>
+                  )}
+                </>
               )}
             </div>
           </div>
