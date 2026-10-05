@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, Suspense } from "react";
 import {
   A2UIProvider,
   A2UIRenderer,
@@ -54,14 +54,22 @@ const STATE_META: Record<
 };
 
 import { useSearchParams } from "next/navigation";
-import AssuranceShell from "../../../../assurance/ui/AssuranceShell";
+import AssuranceShell from "@/assurance/ui/AssuranceShell";
 
-export default function Page() {
+function PageContent() {
   const searchParams = useSearchParams();
   const isV2 = searchParams.get("ui") === "v2" || process.env.NEXT_PUBLIC_UI_V2 === "true";
-  
+
   if (isV2) return <AssuranceShell />;
   return <LivePage />;
+}
+
+export default function Page() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <PageContent />
+    </Suspense>
+  );
 }
 
 function LivePage() {
