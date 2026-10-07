@@ -38,20 +38,23 @@ from rosbags.rosbag2 import Reader
 # The script will print actual names and exit if none match.
 # ---------------------------------------------------------------
 CAMERA_TOPIC_CANDIDATES  = [
+    "hawk_0_left_rgb_image",
     "/hawk_0_left_rgb_image",
     "/camera/image_raw",
     "/rgb/image_raw",
     "/left/image_raw",
 ]
 LIDAR_TOPIC_CANDIDATES   = [
+    "pandar_xt_32_0_lidar",
+    "/pandar_xt_32_0_lidar",
     "/hesai/pandar_points",
     "/lidar/points",
     "/velodyne_points",
     "/scan",
     "/points",
 ]
-TF_TOPIC_CANDIDATES      = ["/tf"]
-IMU_TOPIC_CANDIDATES     = ["/vectornav/IMU", "/imu/data", "/imu"]
+TF_TOPIC_CANDIDATES      = ["/tf", "/tf_static"]
+IMU_TOPIC_CANDIDATES     = ["d455_1_imu", "/d455_1_imu", "/vectornav/IMU", "/imu/data", "/imu"]
 ODOM_TOPIC_CANDIDATES    = ["/odom", "/wheel_odom", "/odometry/filtered"]
 
 LIMIT_CAMERA_MS  = 200.0
