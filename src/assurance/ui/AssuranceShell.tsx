@@ -2,6 +2,7 @@
 import React, { useEffect, useState, useMemo } from "react";
 import "./AssuranceStyles.css";
 import { SyntheticSource } from "../sources/synthetic";
+import { ReplaySource, ReplaySourceOptions } from "../sources/replay";
 import { getDefaultContract } from "../contract/loader";
 import { evaluateContract } from "../contract/evaluator";
 import { AssuranceStateMachine } from "../domain/stateMachine";
@@ -27,7 +28,11 @@ export default function AssuranceShell() {
   const [scenario, setScenario] = useState<'nominal'|'stale'|'conflict'|'unknown'>('nominal');
   const [evidence, setEvidence] = useState<EvidenceSnapshot | null>(null);
   const [logMsg, setLogMsg] = useState("");
-  
+
+  // Source type tracking
+  const [sourceType, setSourceType] = useState<'synthetic'|'replay'>('synthetic');
+  const [replayScenario, setReplayScenario] = useState<'r2b_nominal'|'r2b_stale'|'r2b_conflict'|'r2b_unknown' | null>(null);
+
   // Replay view state
   const [incidents, setIncidents] = useState<IncidentBundle[]>([]);
   const [selectedIncident, setSelectedIncident] = useState<IncidentBundle | null>(null);
@@ -44,31 +49,38 @@ export default function AssuranceShell() {
     [fleetEnabled]
   );
 
-  const source = useMemo(() => new SyntheticSource(), []);
+  const source = useMemo(() => {
+    if (sourceType === 'replay' && replayScenario) {
+      return new ReplaySource({ sseUrl: `/api/replay/${replayScenario}` });
+    }
+    return new SyntheticSource();
+  }, [sourceType, replayScenario]);
   const contract = useMemo(() => getDefaultContract(), []);
   const sm = useMemo(() => new AssuranceStateMachine(), []);
   const recorder = useMemo(() => new IncidentRecorder(), []);
 
   useEffect(() => {
-    recorder.start(contract.mission, contract.version, 'synthetic');
+    recorder.start(contract.mission, contract.version, sourceType);
     return () => recorder.stop();
-  }, [recorder, contract]);
+  }, [recorder, contract, sourceType]);
 
   useEffect(() => {
-    source.setScenario(scenario);
+    if (sourceType === 'synthetic') {
+      (source as SyntheticSource).setScenario(scenario);
+    }
     source.onSnapshot((s) => setEvidence(s));
     source.start();
     return () => source.stop();
-  }, [source, scenario]);
+  }, [source, scenario, sourceType]);
 
   const nesyMode: NeSyMode = scenario === 'stale' || scenario === 'conflict' ? 'Advisory' : scenario === 'unknown' ? 'Emergency' : 'Autonomous';
   let res = null;
   let checks = {};
   let fusionReport = null;
-  
+
   if (evidence) {
     let modifiedEvidence = { ...evidence };
-    
+
     // Inject fusion result into evidence
     const conflict = scenario === 'conflict';
     if (conflict) {
@@ -101,7 +113,7 @@ export default function AssuranceShell() {
         t: evidence.t
       };
     }
-    
+
     checks = evaluateContract(contract, modifiedEvidence);
     res = sm.tick(modifiedEvidence.t, checks, conflict, nesyMode);
   }
@@ -141,20 +153,28 @@ export default function AssuranceShell() {
         <span>Robot RB-07, warehouse aisle B pickup</span>
         <span style={{flex:1}} />
         <span style={{fontSize:'12px', color:'var(--ink2)'}}>Scenario</span>
-        <select value={scenario} onChange={e => setScenario(e.target.value as any)} style={{padding:'3px 8px', borderRadius:'7px', border:'1px solid var(--line)', background:'rgba(255,255,255,.8)', color:'var(--ink)'}}>
+        <select value={scenario} onChange={e => {
+          setScenario(e.target.value as any);
+          setSourceType('synthetic');
+          setReplayScenario(null);
+        }} style={{padding:'3px 8px', borderRadius:'7px', border:'1px solid var(--line)', background:'rgba(255,255,255,.8)', color:'var(--ink)'}}>
           <option value="nominal">Nominal run</option>
           <option value="stale">Stale camera</option>
           <option value="conflict">Camera and LiDAR conflict</option>
           <option value="unknown">Evidence missing</option>
         </select>
-        <span style={{fontSize:'11px', padding:'2px 8px', borderRadius:'99px', border:'1px solid var(--line)', background:'#fff', color:'var(--ink2)'}}>Synthetic demo data</span>
+        <span style={{fontSize:'11px', padding:'2px 8px', borderRadius:'99px', border:'1px solid var(--line)', background:'#fff', color:'var(--ink2)'}}>
+          {sourceType === 'replay' && replayScenario
+            ? `Replay: NVIDIA r2b 2023 - ${replayScenario.replace('r2b_', '')}`
+            : 'Synthetic demo data'}
+        </span>
         {res && (
           <span className="v2-chip" data-s={res.state} style={{'--c': STATE_COLORS[res.state]} as any}>
             <i>{ICON[res.state]}</i><span>{res.state}</span>
           </span>
         )}
       </header>
-      
+
       <main className="v2-stage">
         {view === 'live' && res && evidence && (
           <div className="v2-view on">
@@ -300,6 +320,59 @@ export default function AssuranceShell() {
               <div className="v2-row"><span className="n">Recorded ROS2 bag (MCAP replay)</span><span className="v2-st unk">Not connected</span></div>
               <div className="v2-row"><span className="n">Live ROS2 monitor</span><span className="v2-st unk">Not connected</span></div>
               <div className="v2-row"><span className="n">CASSANDRA acoustic plugin</span><span className="v2-st unk">Later</span></div>
+
+              <div style={{marginTop:'32px', paddingTop:'20px', borderTop:'1px solid var(--line)'}}>
+                <h3 style={{fontSize:'14px', fontWeight:600, color:'var(--ink)', marginBottom:'12px'}}>Real data replay (NVIDIA r2b 2023)</h3>
+                <div style={{display:'flex', gap:'8px', flexWrap:'wrap', marginBottom:'12px'}}>
+                  <button
+                    className="v2-btn"
+                    style={{background: sourceType === 'replay' && replayScenario === 'r2b_nominal' ? 'var(--accent)' : undefined,
+                            color: sourceType === 'replay' && replayScenario === 'r2b_nominal' ? '#fff' : undefined}}
+                    onClick={() => {
+                      setSourceType('replay');
+                      setReplayScenario('r2b_nominal');
+                    }}
+                  >
+                    Nominal run
+                  </button>
+                  <button
+                    className="v2-btn"
+                    style={{background: sourceType === 'replay' && replayScenario === 'r2b_stale' ? 'var(--accent)' : undefined,
+                            color: sourceType === 'replay' && replayScenario === 'r2b_stale' ? '#fff' : undefined}}
+                    onClick={() => {
+                      setSourceType('replay');
+                      setReplayScenario('r2b_stale');
+                    }}
+                  >
+                    Stale camera
+                  </button>
+                  <button
+                    className="v2-btn"
+                    style={{background: sourceType === 'replay' && replayScenario === 'r2b_conflict' ? 'var(--accent)' : undefined,
+                            color: sourceType === 'replay' && replayScenario === 'r2b_conflict' ? '#fff' : undefined}}
+                    onClick={() => {
+                      setSourceType('replay');
+                      setReplayScenario('r2b_conflict');
+                    }}
+                  >
+                    Conflict: glare
+                  </button>
+                  <button
+                    className="v2-btn"
+                    style={{background: sourceType === 'replay' && replayScenario === 'r2b_unknown' ? 'var(--accent)' : undefined,
+                            color: sourceType === 'replay' && replayScenario === 'r2b_unknown' ? '#fff' : undefined}}
+                    onClick={() => {
+                      setSourceType('replay');
+                      setReplayScenario('r2b_unknown');
+                    }}
+                  >
+                    Evidence missing
+                  </button>
+                </div>
+                <p style={{fontSize:'11px', color:'var(--ink2)', margin:0}}>
+                  Attribution: NVIDIA r2b Dataset 2023 (CC BY 4.0). Faults injected by converter.
+                </p>
+              </div>
             </div>
           </div>
         )}
