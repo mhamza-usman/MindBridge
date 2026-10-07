@@ -36,8 +36,9 @@ export class ReplaySource implements EvidenceSource {
       this.esRef = es;
       es.onmessage = (ev) => {
         try {
-          const snapshot = JSON.parse(ev.data) as EvidenceSnapshot;
-          this.notifySnapshot(snapshot);
+          const data = JSON.parse(ev.data);
+          // Convert raw SSE format to EvidenceSnapshot
+          this.emit(data);
         } catch {
           // ignore malformed lines
         }
