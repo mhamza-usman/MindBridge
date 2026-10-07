@@ -9,9 +9,9 @@ export const runtime = 'nodejs';
 
 export async function GET(
   _req: NextRequest,
-  { params }: { params: { scenario: string } }
+  { params }: { params: Promise<{ scenario: string }> }
 ) {
-  const { scenario } = params
+  const { scenario } = await params
   if (!VALID.has(scenario)) {
     return new Response('Unknown scenario', { status: 404 })
   }
