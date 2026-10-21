@@ -201,9 +201,64 @@ export default function AssuranceShell() {
 
             <div className="v2-panel v2-c7">
               <h2>Floor map</h2>
-              <div style={{background:'rgba(255,255,255,.5)', border:'1px solid var(--line)', borderRadius:'12px', padding:'10px', height:'200px', display:'flex', alignItems:'center', justifyContent:'center', color:'var(--ink2)'}}>
-                (Floor map SVG placeholder - matches layout)
-              </div>
+              {(() => {
+                const isConflict = scenario === 'conflict' || (sourceType === 'replay' && (replayScenario === 'r2b_conflict' || evidence.items['glare_detected']?.value === 'true' || evidence.items['sensors_agree']?.status === 'bad'));
+                const isStale = scenario === 'stale' || (sourceType === 'replay' && (replayScenario === 'r2b_stale' || evidence.items['camera_age_ms']?.status === 'bad'));
+                const isUnknown = scenario === 'unknown' || (sourceType === 'replay' && (replayScenario === 'r2b_unknown' || res.state === 'Unknown'));
+                const showCone = !isUnknown && !isStale;
+                const showObst = isConflict;
+                const mapNote = isConflict
+                  ? 'Conflict detected at 3.2 m, adjacent to polished floor zone.'
+                  : isStale
+                  ? 'Camera coverage is stale. LiDAR still fresh.'
+                  : isUnknown
+                  ? 'No valid sensor coverage.'
+                  : 'Sensors agree. Path clear to Bin 42.';
+
+                return (
+                  <div>
+                    <svg viewBox="0 0 420 220" width="100%" role="img" aria-label="Floor map with robot, goal and sensor coverage" style={{display:'block'}}>
+                      <rect x="6" y="6" width="408" height="208" rx="10" fill="#fff" stroke="rgba(20,30,50,.12)"/>
+                      <g fill="#e8edf7">
+                        <rect x="30" y="30" width="150" height="34" rx="6"/>
+                        <rect x="30" y="156" width="150" height="34" rx="6"/>
+                        <rect x="230" y="30" width="150" height="34" rx="6"/>
+                        <rect x="230" y="156" width="150" height="34" rx="6"/>
+                      </g>
+                      <text x="34" y="26" fontSize="11" fill="var(--ink2)" fontFamily="var(--font)">Rack A</text>
+                      <text x="234" y="26" fontSize="11" fill="var(--ink2)" fontFamily="var(--font)">Rack B</text>
+                      
+                      {isConflict && (
+                        <g>
+                          <rect x="196" y="84" width="60" height="52" rx="8" fill="#fff4d6" stroke="#e5c56b" strokeDasharray="4 3"/>
+                          <text x="200" y="146" fontSize="10" fill="#a15c00" fontFamily="var(--font)">Polished floor</text>
+                        </g>
+                      )}
+                      
+                      <path d="M60 110 H330" stroke="#0a66ff" strokeWidth="2" strokeDasharray="5 4" fill="none" opacity="0.6"/>
+                      
+                      {showCone && (
+                        <polygon points="120,110 190,80 190,140" fill="rgba(10,102,255,.14)" stroke="#0a66ff" strokeDasharray="3 3"/>
+                      )}
+                      
+                      {showObst && (
+                        <g>
+                          <circle cx="228" cy="108" r="8" fill="none" stroke="#c4162a" strokeWidth="2" strokeDasharray="3 2"/>
+                          <text x="214" y="96" fontSize="10" fill="#c4162a" fontFamily="var(--font)">Camera: object</text>
+                          <text x="214" y="128" fontSize="10" fill="#1e8e4e" fontFamily="var(--font)">LiDAR: clear</text>
+                        </g>
+                      )}
+                      
+                      <circle cx="120" cy="110" r="9" fill="#0a66ff"/>
+                      <text x="106" y="134" fontSize="11" fontWeight="600" fill="var(--ink)" fontFamily="var(--font)">RB-07</text>
+                      
+                      <circle cx="332" cy="110" r="7" fill="#1e8e4e"/>
+                      <text x="318" y="98" fontSize="11" fill="var(--ink2)" fontFamily="var(--font)">Bin 42</text>
+                    </svg>
+                    <div style={{fontSize:'12px', color:'var(--ink2)', marginTop:'8px'}}>{mapNote}</div>
+                  </div>
+                );
+              })()}
             </div>
 
             <div className="v2-panel v2-c6">
@@ -221,16 +276,31 @@ export default function AssuranceShell() {
 
             <div className="v2-panel v2-c6">
               <h2>NeSyConf (existing engine)</h2>
-              <div className="v2-row">
-                 <span className="n" style={{flex:'none', width:'130px'}}>Perception</span>
-                 <div className="v2-bar"><span style={{width:`${scenario==='nominal'?92:scenario==='stale'?68:scenario==='conflict'?71:0}%`}}></span></div>
-                 <span className="v" style={{width:'40px', textAlign:'right'}}>{scenario==='nominal'?92:scenario==='stale'?68:scenario==='conflict'?71:0}%</span>
-              </div>
-              <div className="v2-row">
-                 <span className="n" style={{flex:'none', width:'130px'}}>Plan certainty</span>
-                 <div className="v2-bar"><span style={{width:`${scenario==='nominal'?90:scenario==='stale'?61:scenario==='conflict'?66:0}%`}}></span></div>
-                 <span className="v" style={{width:'40px', textAlign:'right'}}>{scenario==='nominal'?90:scenario==='stale'?61:scenario==='conflict'?66:0}%</span>
-              </div>
+              {(() => {
+                const percVal = evidence.items['perception_pct']?.value ? Math.round(parseFloat(evidence.items['perception_pct'].value)) : (scenario==='nominal'?92:scenario==='stale'?68:scenario==='conflict'?71:0);
+                const uncVal = evidence.items['uncertainty_pct']?.value ? Math.round(parseFloat(evidence.items['uncertainty_pct'].value)) : (scenario==='nominal'?8:scenario==='stale'?41:scenario==='conflict'?36:100);
+                const planVal = scenario === 'nominal' ? 90 : scenario === 'stale' ? 61 : scenario === 'conflict' ? 66 : 0;
+
+                return (
+                  <div>
+                    <div className="v2-row">
+                       <span className="n" style={{flex:'none', width:'130px'}}>Perception</span>
+                       <div className="v2-bar"><span style={{width:`${percVal}%`}}></span></div>
+                       <span className="v" style={{width:'40px', textAlign:'right'}}>{percVal}%</span>
+                    </div>
+                    <div className="v2-row">
+                       <span className="n" style={{flex:'none', width:'130px'}}>Plan certainty</span>
+                       <div className="v2-bar"><span style={{width:`${planVal}%`}}></span></div>
+                       <span className="v" style={{width:'40px', textAlign:'right'}}>{planVal}%</span>
+                    </div>
+                    <div className="v2-row">
+                       <span className="n" style={{flex:'none', width:'130px'}}>System uncertainty</span>
+                       <div className="v2-bar"><span style={{width:`${uncVal}%`, background:'var(--sup)'}}></span></div>
+                       <span className="v" style={{width:'40px', textAlign:'right'}}>{uncVal}%</span>
+                    </div>
+                  </div>
+                );
+              })()}
               <h3 style={{fontSize:'12px', fontWeight:600, color:'var(--ink2)', margin:'10px 0 4px'}}>Current NeSyConf mode</h3>
               <div className="v2-modes">
                 {ALL_MODES.map(m => <span key={m} className={m === nesyMode ? 'on' : ''}>{m}</span>)}
@@ -316,8 +386,32 @@ export default function AssuranceShell() {
           <div className="v2-view on">
             <div className="v2-panel v2-c12">
               <h2>Evidence sources</h2>
-              <div className="v2-row"><span className="n">Synthetic scenarios</span><span className="v2-st">Connected</span></div>
-              <div className="v2-row"><span className="n">Recorded ROS2 bag (MCAP replay)</span><span className="v2-st unk">Not connected</span></div>
+              <div
+                className="v2-row"
+                style={{cursor: 'pointer'}}
+                onClick={() => {
+                  setSourceType('synthetic');
+                  setReplayScenario(null);
+                }}
+              >
+                <span className="n">Synthetic scenarios</span>
+                <span className={`v2-st ${sourceType === 'synthetic' ? '' : 'unk'}`}>
+                  {sourceType === 'synthetic' ? 'Connected' : 'Not connected'}
+                </span>
+              </div>
+              <div
+                className="v2-row"
+                style={{cursor: 'pointer'}}
+                onClick={() => {
+                  setSourceType('replay');
+                  if (!replayScenario) setReplayScenario('r2b_nominal');
+                }}
+              >
+                <span className="n">Recorded ROS2 bag (MCAP replay)</span>
+                <span className={`v2-st ${sourceType === 'replay' ? '' : 'unk'}`}>
+                  {sourceType === 'replay' ? `Connected (${replayScenario || 'r2b_nominal'})` : 'Not connected'}
+                </span>
+              </div>
               <div className="v2-row"><span className="n">Live ROS2 monitor</span><span className="v2-st unk">Not connected</span></div>
               <div className="v2-row"><span className="n">CASSANDRA acoustic plugin</span><span className="v2-st unk">Later</span></div>
 

@@ -95,22 +95,72 @@ export class ReplaySource implements EvidenceSource {
       this.notifySnapshot(s);
     } else {
       // SSE stream format: convert raw fields to EvidenceSnapshot
+      const camAge = line.cam_age_ms ?? line.camera_age_ms ?? 0;
+      const lidarAge = line.lidar_age_ms ?? 0;
+      const tfAge = line.tf_age_ms ?? 45;
+      const battery = line.battery_pct ?? line.battery_reserve_pct ?? 78;
+      const calib = line.calibration_valid ?? true;
+      const agree = line.sensors_agree ?? true;
+
       const items: Record<string, EvidenceItem> = {
-        'cam_age_ms': {
-          id: 'cam_age_ms',
-          label: 'Camera age',
-          value: String(line.cam_age_ms || 0),
+        'camera_age_ms': {
+          id: 'camera_age_ms',
+          label: 'Camera freshness',
+          value: String(camAge),
           unit: 'ms',
-          status: (line.cam_age_ms || 0) > 200 ? 'bad' : 'ok',
+          status: camAge > 200 ? 'bad' : 'ok',
           source: 'replay',
           t: line.t
         },
         'lidar_age_ms': {
           id: 'lidar_age_ms',
-          label: 'LiDAR age',
-          value: String(line.lidar_age_ms || 0),
+          label: 'LiDAR freshness',
+          value: String(lidarAge),
           unit: 'ms',
-          status: (line.lidar_age_ms || 0) > 200 ? 'bad' : 'ok',
+          status: lidarAge > 200 ? 'bad' : 'ok',
+          source: 'replay',
+          t: line.t
+        },
+        'tf_age_ms': {
+          id: 'tf_age_ms',
+          label: 'TF age',
+          value: String(tfAge),
+          unit: 'ms',
+          status: tfAge > 500 ? 'bad' : 'ok',
+          source: 'replay',
+          t: line.t
+        },
+        'localization_std_m': {
+          id: 'localization_std_m',
+          label: 'Localization std dev',
+          value: String(line.localization_std_m ?? '0.032'),
+          unit: 'm',
+          status: 'ok',
+          source: 'replay',
+          t: line.t
+        },
+        'battery_reserve_pct': {
+          id: 'battery_reserve_pct',
+          label: 'Battery reserve',
+          value: String(battery),
+          unit: '%',
+          status: battery < 20 ? 'bad' : 'ok',
+          source: 'replay',
+          t: line.t
+        },
+        'calibration_valid': {
+          id: 'calibration_valid',
+          label: 'Calibration valid',
+          value: String(calib),
+          status: calib ? 'ok' : 'bad',
+          source: 'replay',
+          t: line.t
+        },
+        'sensors_agree': {
+          id: 'sensors_agree',
+          label: 'Camera and LiDAR agree',
+          value: String(agree),
+          status: agree ? 'ok' : 'bad',
           source: 'replay',
           t: line.t
         },
@@ -120,14 +170,6 @@ export class ReplaySource implements EvidenceSource {
           value: String(line.cam_rate_hz || 0),
           unit: 'Hz',
           status: (line.cam_rate_hz || 0) < 10 ? 'warn' : 'ok',
-          source: 'replay',
-          t: line.t
-        },
-        'sensors_agree': {
-          id: 'sensors_agree',
-          label: 'Sensors agree',
-          value: String(line.sensors_agree ?? true),
-          status: line.sensors_agree ? 'ok' : 'bad',
           source: 'replay',
           t: line.t
         },
@@ -156,17 +198,9 @@ export class ReplaySource implements EvidenceSource {
           status: (line.uncertainty_pct || 0) > 30 ? 'warn' : 'ok',
           source: 'replay',
           t: line.t
-        },
-        'state': {
-          id: 'state',
-          label: 'Assurance state',
-          value: String(line.state || 'Unknown'),
-          status: line.state === 'Autonomous' ? 'ok' : 'warn',
-          source: 'replay',
-          t: line.t
         }
       };
-      const s: EvidenceSnapshot = { t: line.t, items };
+      const s: EvidenceSnapshot = { t: line.t, items, source: 'replay' };
       this.notifySnapshot(s);
     }
   }

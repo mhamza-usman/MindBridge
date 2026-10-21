@@ -14,6 +14,7 @@ export interface EvidenceItem {
 export interface EvidenceSnapshot {
   t: number;
   items: Record<string, EvidenceItem>;
+  source?: 'synthetic' | 'replay' | 'live' | 'acoustic';
 }
 
 export interface Assumption {

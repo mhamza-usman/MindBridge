@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { IncidentBundle } from "../../incidents/types";
+import { IncidentBundle, IncidentEvent } from "../incidents/types";
 
 interface ReplayScrubberProps {
   incident: IncidentBundle;
@@ -8,8 +8,8 @@ interface ReplayScrubberProps {
 }
 
 export function ReplayScrubber({ incident, onClose }: ReplayScrubberProps) {
-  const events = incident.events.filter(e => e.t);
-  const times  = events.map(e => typeof e.t === 'string' ? new Date(e.t).getTime() : Number(e.t));
+  const events = incident.events.filter((e: IncidentEvent) => e.t !== undefined && e.t !== null);
+  const times  = events.map((e: IncidentEvent) => typeof e.t === 'string' ? new Date(e.t).getTime() : Number(e.t));
   const minT   = times[0]  ?? 0;
   const maxT   = times[times.length - 1] ?? 0;
   const span   = maxT - minT || 1;
@@ -107,7 +107,7 @@ export function ReplayScrubber({ incident, onClose }: ReplayScrubberProps) {
 
       {/* Mini event list — all events, current highlighted */}
       <div style={{ maxHeight: '130px', overflowY: 'auto', marginTop: '10px', fontSize: '11px', fontFamily: 'var(--mono)' }}>
-        {events.map((e, i) => {
+        {events.map((e: IncidentEvent, i: number) => {
           const t = typeof e.t === 'string' ? new Date(e.t).toLocaleTimeString() : new Date(Number(e.t)).toLocaleTimeString();
           return (
             <div key={i} onClick={() => { stop(); setCursor(i); }}
