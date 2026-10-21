@@ -239,6 +239,8 @@ def main() -> None:
     p.add_argument("--glare-start",      type=float, default=10.0)
     p.add_argument("--glare-duration",   type=float, default=6.0)
     p.add_argument("--unknown-start",    type=float, default=8.0)
+    p.add_argument("--loop-to", type=float, default=0.0,
+                   help="Loop output until this many seconds. 0 = no loop.")
     args = p.parse_args()
 
     if args.list_topics:
@@ -250,6 +252,20 @@ def main() -> None:
     print(f"Inject: {args.inject}")
 
     rows = generate(args.bag_path, args)
+
+    if args.loop_to > 0 and rows:
+        original = rows[:]
+        orig_dur = original[-1]['t']
+        offset = round(orig_dur + 0.1, 3)
+        while rows[-1]['t'] < args.loop_to:
+            for row in original:
+                new_row = dict(row)
+                new_row['t'] = round(row['t'] + offset, 2)
+                rows.append(new_row)
+                if rows[-1]['t'] >= args.loop_to:
+                    break
+            offset = round(offset + orig_dur + 0.1, 3)
+        rows = [r for r in rows if r['t'] <= args.loop_to]
 
     with open(args.out, "w") as f:
         for row in rows:
