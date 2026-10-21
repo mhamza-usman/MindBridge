@@ -14,6 +14,7 @@ import { evaluateFusion, FusionInput } from "../fusion/detector";
 import { FleetView } from "./fleet/FleetView";
 import { createSyntheticFleet } from "../fleet/syntheticFleet";
 import { ReplayScrubber } from "./ReplayScrubber";
+import { MonitoringPanel } from "./MonitoringPanel";
 
 const STATE_COLORS: Record<AssuranceState, string> = {
   Autonomous: 'var(--auto)', Degraded: 'var(--deg)', Supervised: 'var(--sup)', Unknown: 'var(--unk)', Blocked: 'var(--blk)'
@@ -28,6 +29,8 @@ export default function AssuranceShell() {
   const [scenario, setScenario] = useState<'nominal'|'stale'|'conflict'|'unknown'>('nominal');
   const [evidence, setEvidence] = useState<EvidenceSnapshot | null>(null);
   const [logMsg, setLogMsg] = useState("");
+  // Accumulate evidence snapshots for the monitoring panel
+  const [evidenceHistory, setEvidenceHistory] = useState<EvidenceSnapshot[]>([]);
 
   // Source type tracking
   const [sourceType, setSourceType] = useState<'synthetic'|'replay'>('synthetic');
@@ -68,12 +71,33 @@ export default function AssuranceShell() {
     if (sourceType === 'synthetic') {
       (source as SyntheticSource).setScenario(scenario);
     }
-    source.onSnapshot((s) => setEvidence(s));
+    // Reset history when source changes
+    setEvidenceHistory([]);
+    source.onSnapshot((s) => {
+      setEvidence(s);
+      setEvidenceHistory(prev => {
+        const next = [...prev, s];
+        return next.length > 300 ? next.slice(-300) : next;
+      });
+    });
     source.start();
     return () => source.stop();
   }, [source, scenario, sourceType]);
 
-  const nesyMode: NeSyMode = scenario === 'stale' || scenario === 'conflict' ? 'Advisory' : scenario === 'unknown' ? 'Emergency' : 'Autonomous';
+  // Derive NeSy mode: for replay use dataset's state field; for synthetic use scenario name
+  const nesyMode: NeSyMode = (() => {
+    if (sourceType === 'replay' && evidence) {
+      const percPct = parseFloat(evidence.items['perception_pct']?.value ?? '100');
+      const uncPct = parseFloat(evidence.items['uncertainty_pct']?.value ?? '0');
+      const camBad = evidence.items['camera_age_ms']?.status === 'bad';
+      const sensorsBad = evidence.items['sensors_agree']?.status === 'bad';
+      if (uncPct > 60 || (!evidence.items['perception_pct'])) return 'Emergency';
+      if (sensorsBad || uncPct > 30) return 'Advisory';
+      if (camBad || percPct < 70) return 'Monitoring';
+      return 'Autonomous';
+    }
+    return scenario === 'stale' || scenario === 'conflict' ? 'Advisory' : scenario === 'unknown' ? 'Emergency' : 'Autonomous';
+  })();
   let res = null;
   let checks = {};
   let fusionReport = null;
@@ -82,7 +106,12 @@ export default function AssuranceShell() {
     let modifiedEvidence = { ...evidence };
 
     // Inject fusion result into evidence
-    const conflict = scenario === 'conflict';
+    // For replay: detect conflict from dataset fields
+    const replayConflict = sourceType === 'replay' && (
+      evidence.items['sensors_agree']?.status === 'bad' ||
+      evidence.items['glare_detected']?.value === 'true'
+    );
+    const conflict = scenario === 'conflict' || replayConflict;
     if (conflict) {
       const mockFusionInput: FusionInput = {
         syncSkewMs: 10,
@@ -207,13 +236,20 @@ export default function AssuranceShell() {
                 const isUnknown = scenario === 'unknown' || (sourceType === 'replay' && (replayScenario === 'r2b_unknown' || res.state === 'Unknown'));
                 const showCone = !isUnknown && !isStale;
                 const showObst = isConflict;
+                // Animate robot X: use t from evidence (0..90s) or conflict_at_m to set position
+                const conflictAtM = parseFloat(evidence.items['uncertainty_pct'] ? '0' : '0');
+                const progress = sourceType === 'replay'
+                  ? Math.min(1, (evidence.t ?? 0) / 90)
+                  : (scenario === 'conflict' ? 0.42 : scenario === 'stale' ? 0.25 : scenario === 'unknown' ? 0.05 : 0.1);
+                const robotX = 70 + progress * 220; // 70..290 px along aisle
+                const conflictX = isConflict ? Math.min(robotX + 40, 290) : 228;
                 const mapNote = isConflict
-                  ? 'Conflict detected at 3.2 m, adjacent to polished floor zone.'
+                  ? `Conflict detected near position ${(progress * 5).toFixed(1)} m. Polished floor zone.`
                   : isStale
                   ? 'Camera coverage is stale. LiDAR still fresh.'
                   : isUnknown
                   ? 'No valid sensor coverage.'
-                  : 'Sensors agree. Path clear to Bin 42.';
+                  : `Sensors agree. Robot at ${(progress * 5).toFixed(1)} m. Path clear to Bin 42.`;
 
                 return (
                   <div>
@@ -243,14 +279,22 @@ export default function AssuranceShell() {
                       
                       {showObst && (
                         <g>
-                          <circle cx="228" cy="108" r="8" fill="none" stroke="#c4162a" strokeWidth="2" strokeDasharray="3 2"/>
-                          <text x="214" y="96" fontSize="10" fill="#c4162a" fontFamily="var(--font)">Camera: object</text>
-                          <text x="214" y="128" fontSize="10" fill="#1e8e4e" fontFamily="var(--font)">LiDAR: clear</text>
+                          <circle cx={conflictX} cy="108" r="8" fill="none" stroke="#c4162a" strokeWidth="2" strokeDasharray="3 2"/>
+                          <text x={conflictX - 14} y="96" fontSize="10" fill="#c4162a" fontFamily="var(--font)">Camera: object</text>
+                          <text x={conflictX - 14} y="128" fontSize="10" fill="#1e8e4e" fontFamily="var(--font)">LiDAR: clear</text>
                         </g>
                       )}
                       
-                      <circle cx="120" cy="110" r="9" fill="#0a66ff"/>
-                      <text x="106" y="134" fontSize="11" fontWeight="600" fill="var(--ink)" fontFamily="var(--font)">RB-07</text>
+                      {/* Robot dot — animated along the aisle */}
+                      <circle cx={robotX} cy="110" r="9" fill={isUnknown ? 'var(--unk)' : isConflict ? 'var(--blk)' : isStale ? 'var(--deg)' : '#0a66ff'} style={{transition:'cx .5s ease'}} />
+                      {/* Velocity trail */}
+                      {[1,2,3].map(k => (
+                        <circle key={k} cx={robotX - k*12} cy="110" r={9 - k*2.5}
+                          fill={isUnknown ? 'var(--unk)' : isConflict ? 'var(--blk)' : isStale ? 'var(--deg)' : '#0a66ff'}
+                          opacity={0.15 / k} style={{transition:'cx .5s ease'}}
+                        />
+                      ))}
+                      <text x={robotX - 14} y="134" fontSize="11" fontWeight="600" fill="var(--ink)" fontFamily="var(--font)">RB-07</text>
                       
                       <circle cx="332" cy="110" r="7" fill="#1e8e4e"/>
                       <text x="318" y="98" fontSize="11" fill="var(--ink2)" fontFamily="var(--font)">Bin 42</text>
@@ -277,25 +321,31 @@ export default function AssuranceShell() {
             <div className="v2-panel v2-c6">
               <h2>NeSyConf (existing engine)</h2>
               {(() => {
-                const percVal = evidence.items['perception_pct']?.value ? Math.round(parseFloat(evidence.items['perception_pct'].value)) : (scenario==='nominal'?92:scenario==='stale'?68:scenario==='conflict'?71:0);
-                const uncVal = evidence.items['uncertainty_pct']?.value ? Math.round(parseFloat(evidence.items['uncertainty_pct'].value)) : (scenario==='nominal'?8:scenario==='stale'?41:scenario==='conflict'?36:100);
-                const planVal = scenario === 'nominal' ? 90 : scenario === 'stale' ? 61 : scenario === 'conflict' ? 66 : 0;
+                // Wire gauges directly from evidence — works for both synthetic and replay
+                const percVal = evidence.items['perception_pct']?.value
+                  ? Math.min(100, Math.max(0, Math.round(parseFloat(evidence.items['perception_pct'].value))))
+                  : (scenario==='nominal'?92:scenario==='stale'?68:scenario==='conflict'?71:0);
+                const uncVal = evidence.items['uncertainty_pct']?.value
+                  ? Math.min(100, Math.max(0, Math.round(parseFloat(evidence.items['uncertainty_pct'].value))))
+                  : (scenario==='nominal'?8:scenario==='stale'?41:scenario==='conflict'?36:100);
+                // Plan certainty: derived from perception and uncertainty together
+                const planVal = Math.max(0, Math.round(percVal * 0.6 + (100 - uncVal) * 0.4));
 
                 return (
                   <div>
                     <div className="v2-row">
                        <span className="n" style={{flex:'none', width:'130px'}}>Perception</span>
-                       <div className="v2-bar"><span style={{width:`${percVal}%`}}></span></div>
+                       <div className="v2-bar"><span style={{width:`${percVal}%`, background: percVal < 70 ? 'var(--deg)' : 'var(--accent)'}}></span></div>
                        <span className="v" style={{width:'40px', textAlign:'right'}}>{percVal}%</span>
                     </div>
                     <div className="v2-row">
                        <span className="n" style={{flex:'none', width:'130px'}}>Plan certainty</span>
-                       <div className="v2-bar"><span style={{width:`${planVal}%`}}></span></div>
+                       <div className="v2-bar"><span style={{width:`${planVal}%`, background: planVal < 60 ? 'var(--deg)' : 'var(--accent)'}}></span></div>
                        <span className="v" style={{width:'40px', textAlign:'right'}}>{planVal}%</span>
                     </div>
                     <div className="v2-row">
                        <span className="n" style={{flex:'none', width:'130px'}}>System uncertainty</span>
-                       <div className="v2-bar"><span style={{width:`${uncVal}%`, background:'var(--sup)'}}></span></div>
+                       <div className="v2-bar"><span style={{width:`${uncVal}%`, background: uncVal > 30 ? 'var(--blk)' : 'var(--sup)'}}></span></div>
                        <span className="v" style={{width:'40px', textAlign:'right'}}>{uncVal}%</span>
                     </div>
                   </div>
@@ -305,6 +355,15 @@ export default function AssuranceShell() {
               <div className="v2-modes">
                 {ALL_MODES.map(m => <span key={m} className={m === nesyMode ? 'on' : ''}>{m}</span>)}
               </div>
+            </div>
+
+            {/* Live monitoring panel — full width below the two right panels */}
+            <div className="v2-panel v2-c12">
+              <MonitoringPanel
+                history={evidenceHistory}
+                sourceType={sourceType}
+                replayScenario={replayScenario}
+              />
             </div>
           </div>
         )}

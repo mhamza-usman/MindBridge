@@ -30,10 +30,9 @@ export async function GET(
   const stream = new ReadableStream({
     start(ctrl) {
       const iv = setInterval(() => {
+        // Loop replay continuously so monitoring feed stays live
         if (idx >= lines.length) {
-          ctrl.close()
-          clearInterval(iv)
-          return
+          idx = 1; // skip t=0 startup frame on loop
         }
         ctrl.enqueue(enc.encode(`data: ${lines[idx]}\n\n`))
         idx++
