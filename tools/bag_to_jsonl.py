@@ -181,7 +181,7 @@ def generate(bag_path: str, args) -> list[dict]:
 
         # State: check if violation has persisted over last 20 frames (~2 s)
         history_violated = any(
-            e.get("cam_violated") or e.get("lidar_violated")
+            e.get("cam_violated") or e.get("lidar_violated") or not e.get("sensors_agree", True)
             for e in events[-20:]
         )
 
