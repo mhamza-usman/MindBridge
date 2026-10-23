@@ -15,6 +15,7 @@ import { FleetView } from "./fleet/FleetView";
 import { createSyntheticFleet } from "../fleet/syntheticFleet";
 import { ReplayScrubber } from "./ReplayScrubber";
 import { MonitoringPanel } from "./MonitoringPanel";
+import TelemetryLayout from "../telemetry/ui/TelemetryLayout";
 
 const STATE_COLORS: Record<AssuranceState, string> = {
   Autonomous: 'var(--auto)', Degraded: 'var(--deg)', Supervised: 'var(--sup)', Unknown: 'var(--unk)', Blocked: 'var(--blk)'
@@ -33,7 +34,7 @@ export default function AssuranceShell() {
   const [evidenceHistory, setEvidenceHistory] = useState<EvidenceSnapshot[]>([]);
 
   // Source type tracking
-  const [sourceType, setSourceType] = useState<'synthetic'|'replay'>('synthetic');
+  const [sourceType, setSourceType] = useState<'synthetic'|'replay'|'telemetry'>('synthetic');
   const [replayScenario, setReplayScenario] = useState<'r2b_nominal'|'r2b_stale'|'r2b_conflict'|'r2b_unknown' | null>(null);
 
   // Replay view state
@@ -174,6 +175,15 @@ export default function AssuranceShell() {
     dlAnchorElem.click();
   };
 
+  // Show telemetry layout when in telemetry mode
+  if (sourceType === 'telemetry') {
+    return (
+      <div className="v2-root">
+        <TelemetryLayout sseUrl="/api/telemetry/r2b_telemetry" />
+      </div>
+    );
+  }
+
   return (
     <div className="v2-root">
       <div className="v2-wall" />
@@ -263,20 +273,20 @@ export default function AssuranceShell() {
                       </g>
                       <text x="34" y="26" fontSize="11" fill="var(--ink2)" fontFamily="var(--font)">Rack A</text>
                       <text x="234" y="26" fontSize="11" fill="var(--ink2)" fontFamily="var(--font)">Rack B</text>
-                      
+
                       {isConflict && (
                         <g>
                           <rect x="196" y="84" width="60" height="52" rx="8" fill="#fff4d6" stroke="#e5c56b" strokeDasharray="4 3"/>
                           <text x="200" y="146" fontSize="10" fill="#a15c00" fontFamily="var(--font)">Polished floor</text>
                         </g>
                       )}
-                      
+
                       <path d="M60 110 H330" stroke="#0a66ff" strokeWidth="2" strokeDasharray="5 4" fill="none" opacity="0.6"/>
-                      
+
                       {showCone && (
                         <polygon points="120,110 190,80 190,140" fill="rgba(10,102,255,.14)" stroke="#0a66ff" strokeDasharray="3 3"/>
                       )}
-                      
+
                       {showObst && (
                         <g>
                           <circle cx={conflictX} cy="108" r="8" fill="none" stroke="#c4162a" strokeWidth="2" strokeDasharray="3 2"/>
@@ -284,7 +294,7 @@ export default function AssuranceShell() {
                           <text x={conflictX - 14} y="128" fontSize="10" fill="#1e8e4e" fontFamily="var(--font)">LiDAR: clear</text>
                         </g>
                       )}
-                      
+
                       {/* Robot dot — animated along the aisle */}
                       <circle cx={robotX} cy="110" r="9" fill={isUnknown ? 'var(--unk)' : isConflict ? 'var(--blk)' : isStale ? 'var(--deg)' : '#0a66ff'} style={{transition:'cx .5s ease'}} />
                       {/* Velocity trail */}
@@ -295,7 +305,7 @@ export default function AssuranceShell() {
                         />
                       ))}
                       <text x={robotX - 14} y="134" fontSize="11" fontWeight="600" fill="var(--ink)" fontFamily="var(--font)">RB-07</text>
-                      
+
                       <circle cx="332" cy="110" r="7" fill="#1e8e4e"/>
                       <text x="318" y="98" fontSize="11" fill="var(--ink2)" fontFamily="var(--font)">Bin 42</text>
                     </svg>
@@ -520,6 +530,18 @@ export default function AssuranceShell() {
                     }}
                   >
                     Evidence missing
+                  </button>
+                </div>
+                <div style={{marginTop:'12px', display:'flex', gap:'8px', flexWrap:'wrap', marginBottom:'12px'}}>
+                  <button
+                    className="v2-btn"
+                    style={{background: sourceType === 'telemetry' ? 'var(--accent)' : undefined,
+                            color: sourceType === 'telemetry' ? '#fff' : undefined}}
+                    onClick={() => {
+                      setSourceType('telemetry');
+                    }}
+                  >
+                    Live Telemetry Dashboard
                   </button>
                 </div>
                 <p style={{fontSize:'11px', color:'var(--ink2)', margin:0}}>
