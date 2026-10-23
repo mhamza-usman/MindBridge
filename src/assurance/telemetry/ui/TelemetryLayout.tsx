@@ -1,11 +1,11 @@
 "use client";
 import React, { useState, useEffect, useMemo } from 'react';
-import IMUGraph from './components/IMUGraph';
-import SensorTimeline from './components/SensorTimeline';
-import Lidar2DView from './components/Lidar2DView';
-import CameraView from './components/CameraView';
-import { TelemetrySource, TelemetryData } from './TelemetrySource';
-import { TelemetryBuffer } from './TelemetryBuffer';
+import IMUGraph from '../components/IMUGraph';
+import SensorTimeline from '../components/SensorTimeline';
+import Lidar2DView from '../components/Lidar2DView';
+import CameraView from '../components/CameraView';
+import { TelemetrySource, TelemetryData } from '../TelemetrySource';
+import { TelemetryBuffer } from '../TelemetryBuffer';
 
 interface TelemetryLayoutProps {
   sseUrl: string;
@@ -36,9 +36,9 @@ export default function TelemetryLayout({ sseUrl }: TelemetryLayoutProps) {
   const timelineData = useMemo(() => buffer.getSensorTimelineData(), [telemetryData]);
 
   return (
-    <div style={{ 
-      padding: '16px', 
-      background: '#f9fafb', 
+    <div style={{
+      padding: '16px',
+      background: '#f9fafb',
       minHeight: '100vh',
       fontFamily: 'system-ui, -apple-system, sans-serif'
     }}>
@@ -55,8 +55,8 @@ export default function TelemetryLayout({ sseUrl }: TelemetryLayoutProps) {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px' }}>
         {/* Camera Feed */}
         <div>
-          <CameraView 
-            data={latestCamera || { width: 0, height: 0, has_image: false }} 
+          <CameraView
+            data={latestCamera || { width: 0, height: 0, has_image: false }}
             width={500}
             height={375}
           />
@@ -64,8 +64,8 @@ export default function TelemetryLayout({ sseUrl }: TelemetryLayoutProps) {
 
         {/* LiDAR Point Cloud */}
         <div>
-          <Lidar2DView 
-            data={latestLidar || { points: [], num_points: 0, has_lidar: false }} 
+          <Lidar2DView
+            data={latestLidar || { points: [], num_points: 0, has_lidar: false }}
             width={500}
             height={375}
           />
@@ -73,8 +73,8 @@ export default function TelemetryLayout({ sseUrl }: TelemetryLayoutProps) {
 
         {/* IMU Telemetry - spans full width */}
         <div style={{ gridColumn: '1 / -1' }}>
-          <IMUGraph 
-            data={imuData} 
+          <IMUGraph
+            data={imuData}
             width={1016}
             height={250}
           />
@@ -82,8 +82,8 @@ export default function TelemetryLayout({ sseUrl }: TelemetryLayoutProps) {
 
         {/* Sensor Timeline - spans full width */}
         <div style={{ gridColumn: '1 / -1' }}>
-          <SensorTimeline 
-            data={timelineData} 
+          <SensorTimeline
+            data={timelineData}
             width={1016}
             height={200}
           />
@@ -91,19 +91,19 @@ export default function TelemetryLayout({ sseUrl }: TelemetryLayoutProps) {
       </div>
 
       {/* Status bar */}
-      <div style={{ 
-        marginTop: '16px', 
-        padding: '12px', 
-        background: '#ffffff', 
-        borderRadius: '8px', 
+      <div style={{
+        marginTop: '16px',
+        padding: '12px',
+        background: '#ffffff',
+        borderRadius: '8px',
         border: '1px solid #e5e7eb',
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center'
       }}>
         <div style={{ fontSize: '12px', color: '#6b7280' }}>
-          <span style={{ fontWeight: 600, color: '#111827' }}>Data Points:</span> {telemetryData.length} | 
-          <span style={{ fontWeight: 600, color: '#111827', marginLeft: '8px' }}>Window:</span> 60s | 
+          <span style={{ fontWeight: 600, color: '#111827' }}>Data Points:</span> {telemetryData.length} |
+          <span style={{ fontWeight: 600, color: '#111827', marginLeft: '8px' }}>Window:</span> 60s |
           <span style={{ fontWeight: 600, color: '#111827', marginLeft: '8px' }}>Source:</span> r2b_live_telemetry
         </div>
         <div style={{ fontSize: '12px', color: '#10b981', fontWeight: 600 }}>
