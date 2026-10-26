@@ -1,4 +1,6 @@
 import { NextRequest } from 'next/server';
+import { readFile } from 'fs/promises';
+import { existsSync } from 'fs';
 
 const SCENARIOS = ['r2b_telemetry'];
 
@@ -15,12 +17,11 @@ export async function GET(
   const telemetryPath = `${process.cwd()}/public/replay/${scenario}.jsonl`;
 
   try {
-    const telemetryFile = Bun.file(telemetryPath);
-    if (!await telemetryFile.exists()) {
+    if (!existsSync(telemetryPath)) {
       return new Response('Telemetry file not found', { status: 404 });
     }
 
-    const telemetryData = await telemetryFile.text();
+    const telemetryData = await readFile(telemetryPath, 'utf-8');
     const lines = telemetryData.trim().split('\n');
 
     const encoder = new TextEncoder();
