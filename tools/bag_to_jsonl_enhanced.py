@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Enhanced converter for live telemetry visualization.
-Implements manual binary parsing for ROS2 message types.
+Enhanced converter using proper ROS2 message deserialization.
+Extracts REAL camera images and LiDAR point clouds from bags.
 
 Dependencies:
     pip install rosbags numpy pillow
@@ -15,10 +15,10 @@ import json
 import os
 import sys
 import base64
-import struct
 import numpy as np
 from pathlib import Path
-from rosbags.rosbag2 import Reader
+from rosbags.highlevel import AnyReader
+from rosbags.typesys import Stores, get_typestore
 from PIL import Image as PILImage
 import io
 
@@ -40,241 +40,33 @@ SAMPLE_STEP_S = 0.1
 MAX_IMAGE_SIZE = 240
 
 
-def ns_to_s(ns: int) -> float:
-    return ns / 1_000_000_000.0
-
-
 def pick_topic(candidates: list, present: set) -> str | None:
     return next((t for t in candidates if t in present), None)
 
 
-def parse_sensor_msgs_image(data: bytes) -> dict:
-    """
-    Manual parsing of sensor_msgs/msg/Image.
-    Format: [header] [height][width][encoding][step][data...]
-    Header varies, so we try to find the image data heuristically.
-    """
-    try:
-        # sensor_msgs/Image structure:
-        # std_msgs/Header (timestamp, frame_id)
-        # uint32 height
-        # uint32 width
-        # string encoding
-        # uint32 step
-        # uint8[] data
-
-        # Try to find the image data by looking for valid image dimensions
-        # This is heuristic - in production use proper ROS2 deserialization
-
-        # Skip header (first ~20-40 bytes typically)
-        min_header = 20
-        max_header = 100
-
-        # Look for reasonable image dimensions (between 100 and 2000)
-        for offset in range(min_header, max_header, 4):
-            if offset + 8 > len(data):
-                continue
-            try:
-                height = struct.unpack('<I', data[offset:offset+4])[0]
-                width = struct.unpack('<I', data[offset+4:offset+8])[0]
-
-                if 100 < height < 2000 and 100 < width < 2000:
-                    # Found plausible dimensions
-                    step_offset = offset + 8
-                    if step_offset + 4 > len(data):
-                        continue
-                    step = struct.unpack('<I', data[step_offset:step_offset+4])[0]
-
-                    # Validate step
-                    if step >= width * 3 and step < width * 10:
-                        data_offset = step_offset + 4
-                        expected_size = height * step
-
-                        if data_offset + expected_size <= len(data):
-                            img_data = data[data_offset:data_offset+expected_size]
-
-                            # Downsample
-                            try:
-                                img_array = np.frombuffer(img_data, dtype=np.uint8).reshape((height, width, 3))
-
-                                # Downsample to MAX_IMAGE_SIZE
-                                h, w = img_array.shape[:2]
-                                scale = MAX_IMAGE_SIZE / max(h, w)
-                                new_h, new_w = int(h * scale), int(w * scale)
-                                img_resized = np.array(PILImage.fromarray(img_array).resize((new_w, new_h)))
-
-                                # Convert to JPEG
-                                buffered = io.BytesIO()
-                                PILImage.fromarray(img_resized).save(buffered, format="JPEG", quality=65)
-                                img_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
-
-                                return {
-                                    'image_base64': img_base64,
-                                    'width': new_w,
-                                    'height': new_h,
-                                    'has_image': True,
-                                    'original_width': width,
-                                    'original_height': height
-                                }
-                            except Exception as e:
-                                pass
-            except:
-                continue
-    except Exception as e:
-        pass
-
-    return {
-        'image_base64': None,
-        'width': 0,
-        'height': 0,
-        'has_image': False
-    }
-
-
-def parse_sensor_msgs_pointcloud2(data: bytes) -> dict:
-    """
-    Manual parsing of sensor_msgs/msg/PointCloud2.
-    Format: [header] [height][width][fields][is_bigendian][point_step][data...]
-    """
-    try:
-        # sensor_msgs/PointCloud2 structure:
-        # Skip header (variable length)
-        # Find height and width
-
-        # Search for reasonable dimensions
-        min_offset = 20
-        max_offset = 100
-
-        for offset in range(min_offset, max_offset, 4):
-            if offset + 8 > len(data):
-                continue
-            try:
-                height = struct.unpack('<I', data[offset:offset+4])[0]
-                width = struct.unpack('<I', data[offset+4:offset+8])[0]
-
-                if 10 < height < 1000 and 10 < width < 1000:
-                    # Found plausible dimensions
-                    point_step_offset = offset + 8 + 4 + 8  # height + width + fields + bigendian
-                    if point_step_offset + 4 > len(data):
-                        continue
-                    point_step = struct.unpack('<I', data[point_step_offset:point_step_offset+4])[0]
-
-                    # Validate point step (typically 16-32 bytes for XYZI)
-                    if 12 < point_step < 64:
-                        # Find data offset (after header, which varies)
-                        # Try to find start of actual point data
-                        # Look for region with many points
-                        data_start = point_step_offset + 4
-
-                        if data_start + point_step * 100 <= len(data):
-                            # Extract first 100 points
-                            points = []
-                            num_points = min(100, (len(data) - data_start) // point_step)
-
-                            for i in range(num_points):
-                                pt_offset = data_start + i * point_step
-                                if pt_offset + 12 <= len(data):
-                                    x = struct.unpack('<f', data[pt_offset:pt_offset+4])[0]
-                                    y = struct.unpack('<f', data[pt_offset+4:pt_offset+8])[0]
-                                    z = struct.unpack('<f', data[pt_offset+8:pt_offset+12])[0]
-
-                                    # Filter to reasonable range
-                                    if -50 < x < 50 and -50 < y < 50 and -50 < z < 50:
-                                        points.append({
-                                            'x': round(x, 2),
-                                            'y': round(y, 2),
-                                            'z': round(z, 2)
-                                        })
-
-                            return {
-                                'points': points,
-                                'num_points': len(points),
-                                'has_lidar': len(points) > 0,
-                                'point_count': num_points
-                            }
-            except:
-                continue
-    except Exception as e:
-        pass
-
-    return {
-        'points': [],
-        'num_points': 0,
-        'has_lidar': False
-    }
-
-
-def parse_sensor_msgs_imu(data: bytes) -> dict:
-    """
-    Manual parsing of sensor_msgs/msg/Imu.
-    Format: [header] [orientation][orientation_covariance][angular_velocity][angular_velocity_covariance][linear_acceleration][linear_acceleration_covariance]
-    Each quaternion/vector is 3 floats (12 bytes each)
-    """
-    try:
-        # sensor_msgs/Imu structure:
-        # Skip header
-        # orientation (4 floats = 16 bytes)
-        # orientation_covariance (9 floats = 36 bytes)
-        # angular_velocity (3 floats = 12 bytes)
-        # angular_velocity_covariance (9 floats = 36 bytes)
-        # linear_acceleration (3 floats = 12 bytes)
-        # linear_acceleration_covariance (9 floats = 36 bytes)
-
-        # Try to find acceleration data (usually near the end)
-        # IMU message is typically ~120-150 bytes total
-
-        # Search for the last 12 bytes that could be acceleration
-        for start_pos in range(len(data) - 48, max(0, len(data) - 150), -4):
-            try:
-                # Try to decode last 12 bytes as 3 floats (acceleration)
-                if start_pos + 12 <= len(data):
-                    accel = [
-                        struct.unpack('<f', data[start_pos:start_pos+4])[0],
-                        struct.unpack('<f', data[start_pos+4:start_pos+8])[0],
-                        struct.unpack('<f', data[start_pos+8:start_pos+12])[0]
-                    ]
-
-                    # Check if values are reasonable (acceleration should be around -10 to 10 m/s^2 including gravity)
-                    if all(-20 < a < 20 for a in accel):
-                        # Try to find angular velocity (should be before acceleration)
-                        gyro_start = start_pos - 48  # skip covariance
-                        if gyro_start >= 0 and gyro_start + 12 <= len(data):
-                            gyro = [
-                                struct.unpack('<f', data[gyro_start:gyro_start+4])[0],
-                                struct.unpack('<f', data[gyro_start+4:gyro_start+8])[0],
-                                struct.unpack('<f', data[gyro_start+8:gyro_start+12])[0]
-                            ]
-
-                            accel_mag = (accel[0]**2 + accel[1]**2 + accel[2]**2)**0.5
-                            gyro_mag = (gyro[0]**2 + gyro[1]**2 + gyro[2]**2)**0.5
-
-                            return {
-                                'accel_x': round(accel[0], 3),
-                                'accel_y': round(accel[1], 3),
-                                'accel_z': round(accel[2], 3),
-                                'accel_mag': round(accel_mag, 3),
-                                'gyro_x': round(gyro[0], 3),
-                                'gyro_y': round(gyro[1], 3),
-                                'gyro_z': round(gyro[2], 3),
-                                'gyro_mag': round(gyro_mag, 3),
-                                'has_imu': True
-                            }
-            except:
-                continue
-    except Exception as e:
-        pass
-
-    return {
-        'accel_x': 0, 'accel_y': 0, 'accel_z': 0, 'accel_mag': 0,
-        'gyro_x': 0, 'gyro_y': 0, 'gyro_z': 0, 'gyro_mag': 0,
-        'has_imu': False
-    }
-
-
 def collect_sensor_data(bag_path: str):
-    """Collect all sensor data with timestamps."""
-    with Reader(bag_path) as r:
-        present = {c.topic for c in r.connections}
+    """Collect all sensor data with timestamps using proper deserialization."""
+    bagpath = Path(bag_path)
+
+    # Try different ROS2 typestores
+    typestore = None
+    for store_name in [Stores.ROS2_HUMBLE, Stores.ROS2_IRON, Stores.ROS2_JAZZY]:
+        try:
+            typestore = get_typestore(store_name)
+            print(f"Using typestore: {store_name}")
+            break
+        except Exception as e:
+            print(f"Failed with {store_name}: {e}")
+
+    if not typestore:
+        raise Exception("Could not get typestore")
+
+    cam_data = []
+    lidar_data = []
+    imu_data = []
+
+    with AnyReader([bagpath], default_typestore=typestore) as reader:
+        present = {c.topic for c in reader.connections}
         cam_topic = pick_topic(CAMERA_TOPIC_CANDIDATES, present)
         lidar_topic = pick_topic(LIDAR_TOPIC_CANDIDATES, present)
         imu_topic = pick_topic(IMU_TOPIC_CANDIDATES, present)
@@ -283,32 +75,117 @@ def collect_sensor_data(bag_path: str):
             print("ERROR: Camera topic not found")
             sys.exit(1)
 
-        cam_data = []
-        lidar_data = []
-        imu_data = []
-
-        conn_map = {c.topic: c for c in r.connections}
+        print(f"Camera topic: {cam_topic}")
+        print(f"LiDAR topic: {lidar_topic}")
+        print(f"IMU topic: {imu_topic}")
 
         # Camera
         if cam_topic:
-            for conn, ts, data in r.messages(connections=[conn_map[cam_topic]]):
-                t = ns_to_s(ts)
-                metrics = parse_sensor_msgs_image(data)
-                cam_data.append((t, metrics))
+            connections = [c for c in reader.connections if c.topic == cam_topic]
+            for connection, timestamp, rawdata in reader.messages(connections=connections):
+                msg = reader.deserialize(rawdata, connection.msgtype)
+                t = timestamp / 1_000_000_000.0
+
+                # Downsample image
+                try:
+                    img_array = np.frombuffer(msg.data, dtype=np.uint8).reshape((msg.height, msg.width, 3))
+                    h, w = img_array.shape[:2]
+                    scale = MAX_IMAGE_SIZE / max(h, w)
+                    new_h, new_w = int(h * scale), int(w * scale)
+                    img_resized = np.array(PILImage.fromarray(img_array).resize((new_w, new_h)))
+
+                    buffered = io.BytesIO()
+                    PILImage.fromarray(img_resized).save(buffered, format="JPEG", quality=65)
+                    img_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
+
+                    cam_data.append((t, {
+                        'image_base64': img_base64,
+                        'width': new_w,
+                        'height': new_h,
+                        'has_image': True,
+                        'original_width': msg.width,
+                        'original_height': msg.height
+                    }))
+                except Exception as e:
+                    print(f"Warning: Could not process image at t={t}: {e}")
+                    cam_data.append((t, {
+                        'image_base64': None,
+                        'width': 0,
+                        'height': 0,
+                        'has_image': False
+                    }))
 
         # LiDAR
         if lidar_topic:
-            for conn, ts, data in r.messages(connections=[conn_map[lidar_topic]]):
-                t = ns_to_s(ts)
-                metrics = parse_sensor_msgs_pointcloud2(data)
-                lidar_data.append((t, metrics))
+            connections = [c for c in reader.connections if c.topic == lidar_topic]
+            for connection, timestamp, rawdata in reader.messages(connections=connections):
+                msg = reader.deserialize(rawdata, connection.msgtype)
+                t = timestamp / 1_000_000_000.0
+
+                try:
+                    # PointCloud2 has fields: x, y, z, intensity, etc.
+                    # data is bytes, need to parse based on point_step
+                    point_step = msg.point_step
+                    num_points = len(msg.data) // point_step
+
+                    points = []
+                    for i in range(min(100, num_points)):  # Limit to 100 points
+                        offset = i * point_step
+                        if offset + 12 <= len(msg.data):
+                            x = np.frombuffer(msg.data[offset:offset+4], dtype=np.float32)[0]
+                            y = np.frombuffer(msg.data[offset+4:offset+8], dtype=np.float32)[0]
+                            z = np.frombuffer(msg.data[offset+8:offset+12], dtype=np.float32)[0]
+
+                            if -50 < x < 50 and -50 < y < 50 and -50 < z < 50:
+                                points.append({
+                                    'x': round(float(x), 2),
+                                    'y': round(float(y), 2),
+                                    'z': round(float(z), 2)
+                                })
+
+                    lidar_data.append((t, {
+                        'points': points,
+                        'num_points': len(points),
+                        'has_lidar': len(points) > 0,
+                        'point_count': num_points
+                    }))
+                except Exception as e:
+                    print(f"Warning: Could not process LiDAR at t={t}: {e}")
+                    lidar_data.append((t, {
+                        'points': [],
+                        'num_points': 0,
+                        'has_lidar': False
+                    }))
 
         # IMU
         if imu_topic:
-            for conn, ts, data in r.messages(connections=[conn_map[imu_topic]]):
-                t = ns_to_s(ts)
-                metrics = parse_sensor_msgs_imu(data)
-                imu_data.append((t, metrics))
+            connections = [c for c in reader.connections if c.topic == imu_topic]
+            for connection, timestamp, rawdata in reader.messages(connections=connections):
+                msg = reader.deserialize(rawdata, connection.msgtype)
+                t = timestamp / 1_000_000_000.0
+
+                try:
+                    accel_mag = (msg.linear_acceleration.x**2 + msg.linear_acceleration.y**2 + msg.linear_acceleration.z**2)**0.5
+                    gyro_mag = (msg.angular_velocity.x**2 + msg.angular_velocity.y**2 + msg.angular_velocity.z**2)**0.5
+
+                    imu_data.append((t, {
+                        'accel_x': round(float(msg.linear_acceleration.x), 3),
+                        'accel_y': round(float(msg.linear_acceleration.y), 3),
+                        'accel_z': round(float(msg.linear_acceleration.z), 3),
+                        'accel_mag': round(float(accel_mag), 3),
+                        'gyro_x': round(float(msg.angular_velocity.x), 3),
+                        'gyro_y': round(float(msg.angular_velocity.y), 3),
+                        'gyro_z': round(float(msg.angular_velocity.z), 3),
+                        'gyro_mag': round(float(gyro_mag), 3),
+                        'has_imu': True
+                    }))
+                except Exception as e:
+                    print(f"Warning: Could not process IMU at t={t}: {e}")
+                    imu_data.append((t, {
+                        'accel_x': 0, 'accel_y': 0, 'accel_z': 0, 'accel_mag': 0,
+                        'gyro_x': 0, 'gyro_y': 0, 'gyro_z': 0, 'gyro_mag': 0,
+                        'has_imu': False
+                    }))
 
         # Compute duration
         all_times = [t for t, _ in cam_data]

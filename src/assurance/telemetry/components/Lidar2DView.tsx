@@ -76,10 +76,9 @@ export default function Lidar2DView({ data, width = 400, height = 400 }: Lidar2D
         const screenX = centerX + point.x * scale;
         const screenY = centerY - point.y * scale; // Flip Y for screen coords
 
-        // Color by intensity or height
-        const intensity = point.intensity || point.z || 0;
-        const normalizedIntensity = Math.min(1, Math.max(0, (intensity + 2) / 4));
-        const hue = 120 - normalizedIntensity * 120; // Green to red
+        // Color by height (z)
+        const normalizedZ = (point.z + 2) / 4;
+        const hue = 120 - Math.min(1, Math.max(0, normalizedZ)) * 120; // Green to red
         ctx.fillStyle = `hsl(${hue}, 80%, 50%)`;
 
         ctx.beginPath();
@@ -87,28 +86,11 @@ export default function Lidar2DView({ data, width = 400, height = 400 }: Lidar2D
         ctx.fill();
       });
     } else {
-      // Generate synthetic point cloud based on sensor timing (simulated)
-      // This represents what a real LiDAR scan would look like
-      const numPoints = 100;
-      for (let i = 0; i < numPoints; i++) {
-        const angle = (i / numPoints) * 2 * Math.PI;
-        const distance = 10 + Math.random() * 15;
-        const x = Math.cos(angle) * distance;
-        const y = Math.sin(angle) * distance;
-        const z = -1 + Math.random() * 2;
-
-        const screenX = centerX + x * scale;
-        const screenY = centerY - y * scale;
-
-        // Color by height (z)
-        const normalizedZ = (z + 1) / 2;
-        const hue = 120 - normalizedZ * 120;
-        ctx.fillStyle = `hsl(${hue}, 80%, 50%)`;
-
-        ctx.beginPath();
-        ctx.arc(screenX, screenY, 2, 0, 2 * Math.PI);
-        ctx.fill();
-      }
+      // Waiting for LiDAR data
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '14px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('Waiting for LiDAR data...', width / 2, height / 2);
     }
 
     // Draw scale indicator
@@ -131,7 +113,7 @@ export default function Lidar2DView({ data, width = 400, height = 400 }: Lidar2D
           LiDAR Point Cloud (Bird's Eye)
         </h4>
         <span style={{ fontSize: '11px', color: '#94a3b8' }}>
-          Points: {data.has_lidar ? data.num_points : 'simulated'}
+          Points: {data.has_lidar ? data.num_points : 'waiting'}
         </span>
       </div>
       <canvas
