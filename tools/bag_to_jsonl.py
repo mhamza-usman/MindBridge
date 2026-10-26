@@ -151,7 +151,7 @@ def generate(bag_path: str, args) -> list[dict]:
     while t <= duration:
         cam_age   = age_at(cam_ts,   t)
         lidar_age = age_at(lidar_ts, t)
-        tf_age    = age_at(tf_ts,    t) if tf_ts else 45.0
+        tf_age    = min(age_at(tf_ts, t), 100.0) if tf_ts else 45.0
         cam_rate  = rate_at(cam_ts,  t)
 
         glare_detected = False
