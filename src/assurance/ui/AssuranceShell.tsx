@@ -16,6 +16,7 @@ import { createSyntheticFleet } from "../fleet/syntheticFleet";
 import { ReplayScrubber } from "./ReplayScrubber";
 import { MonitoringPanel } from "./MonitoringPanel";
 import TelemetryLayout from "../telemetry/ui/TelemetryLayout";
+import DatasetImporter from "./DatasetImporter";
 
 const STATE_COLORS: Record<AssuranceState, string> = {
   Autonomous: 'var(--auto)', Degraded: 'var(--deg)', Supervised: 'var(--sup)', Unknown: 'var(--unk)', Blocked: 'var(--blk)'
@@ -47,6 +48,12 @@ export default function AssuranceShell() {
       ? new URLSearchParams(window.location.search).get('fleet') === '1'
         || process.env.NEXT_PUBLIC_FLEET_VIEW === 'true'
       : process.env.NEXT_PUBLIC_FLEET_VIEW === 'true';
+
+  const syntheticEnabled =
+    typeof window !== 'undefined'
+      ? new URLSearchParams(window.location.search).get('synthetic') === '1'
+        || process.env.NEXT_PUBLIC_SYNTHETIC === 'true'
+      : process.env.NEXT_PUBLIC_SYNTHETIC === 'true';
 
   const fleetAggregator = useMemo(
     () => fleetEnabled ? createSyntheticFleet() : null,
@@ -191,20 +198,25 @@ export default function AssuranceShell() {
         <b>MindBridge</b>
         <span>Robot RB-07, warehouse aisle B pickup</span>
         <span style={{flex:1}} />
-        <span style={{fontSize:'12px', color:'var(--ink2)'}}>Scenario</span>
-        <select value={scenario} onChange={e => {
-          setScenario(e.target.value as any);
-          setSourceType('synthetic');
-          setReplayScenario(null);
-        }} style={{padding:'3px 8px', borderRadius:'7px', border:'1px solid var(--line)', background:'rgba(255,255,255,.8)', color:'var(--ink)'}}>
-          <option value="nominal">Nominal run</option>
-          <option value="stale">Stale camera</option>
-          <option value="conflict">Camera and LiDAR conflict</option>
-          <option value="unknown">Evidence missing</option>
-        </select>
+        {syntheticEnabled && (
+          <>
+            <span style={{fontSize:'12px', color:'var(--ink2)'}}>Scenario</span>
+            <select value={scenario} onChange={e => {
+              setScenario(e.target.value as any);
+              setSourceType('synthetic');
+              setReplayScenario(null);
+            }} style={{padding:'3px 8px', borderRadius:'7px', border:'1px solid var(--line)', background:'rgba(255,255,255,.8)', color:'var(--ink)'}}>
+              <option value="nominal">Nominal run</option>
+              <option value="stale">Stale camera</option>
+              <option value="conflict">Camera and LiDAR conflict</option>
+              <option value="unknown">Evidence missing</option>
+            </select>
+          </>
+        )}
         <span style={{fontSize:'11px', padding:'2px 8px', borderRadius:'99px', border:'1px solid var(--line)', background:'#fff', color:'var(--ink2)'}}>
           {sourceType === 'replay' && replayScenario
             ? `Replay: NVIDIA r2b 2023 - ${replayScenario.replace('r2b_', '')}`
+            : sourceType === 'telemetry' ? 'Live Telemetry'
             : 'Synthetic demo data'}
         </span>
         {res && (
@@ -455,19 +467,21 @@ export default function AssuranceShell() {
           <div className="v2-view on">
             <div className="v2-panel v2-c12">
               <h2>Evidence sources</h2>
-              <div
-                className="v2-row"
-                style={{cursor: 'pointer'}}
-                onClick={() => {
-                  setSourceType('synthetic');
-                  setReplayScenario(null);
-                }}
-              >
-                <span className="n">Synthetic scenarios</span>
-                <span className={`v2-st ${sourceType === 'synthetic' ? '' : 'unk'}`}>
-                  {sourceType === 'synthetic' ? 'Connected' : 'Not connected'}
-                </span>
-              </div>
+              {syntheticEnabled && (
+                <div
+                  className="v2-row"
+                  style={{cursor: 'pointer'}}
+                  onClick={() => {
+                    setSourceType('synthetic');
+                    setReplayScenario(null);
+                  }}
+                >
+                  <span className="n">Synthetic scenarios</span>
+                  <span className={`v2-st ${sourceType === 'synthetic' ? '' : 'unk'}`}>
+                    {sourceType === 'synthetic' ? 'Connected' : 'Not connected'}
+                  </span>
+                </div>
+              )}
               <div
                 className="v2-row"
                 style={{cursor: 'pointer'}}
@@ -544,6 +558,11 @@ export default function AssuranceShell() {
                     Live Telemetry Dashboard
                   </button>
                 </div>
+                <DatasetImporter onImport={async (url) => {
+                  // TODO: Implement dataset import
+                  console.log('Importing dataset from:', url);
+                  alert('Dataset import feature - coming soon');
+                }} />
                 <p style={{fontSize:'11px', color:'var(--ink2)', margin:0}}>
                   Attribution: NVIDIA r2b Dataset 2023 (CC BY 4.0). Faults injected by converter.
                 </p>
