@@ -186,7 +186,10 @@ export default function AssuranceShell() {
   if (sourceType === 'telemetry') {
     return (
       <div className="v2-root">
-        <TelemetryLayout sseUrl="/api/telemetry/r2b_telemetry" />
+        <TelemetryLayout
+          sseUrl="/api/telemetry/r2b_telemetry"
+          onBack={() => setSourceType('replay')}
+        />
       </div>
     );
   }

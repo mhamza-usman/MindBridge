@@ -1,5 +1,5 @@
 "use client";
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 
 interface CameraData {
   image_base64?: string | null;
@@ -18,6 +18,7 @@ interface CameraViewProps {
 
 export default function CameraView({ data, width = 400, height = 300 }: CameraViewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [lastImage, setLastImage] = useState<string | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -30,19 +31,31 @@ export default function CameraView({ data, width = 400, height = 300 }: CameraVi
     ctx.fillStyle = '#1e293b';
     ctx.fillRect(0, 0, width, height);
 
+    // If current frame has image, use it and cache it
     if (data.has_image && data.image_base64) {
-      // Load and draw the real image from bag
+      setLastImage(data.image_base64);
       const img = new Image();
       img.onload = () => {
         ctx.drawImage(img, 0, 0, width, height);
       };
       img.src = `data:image/jpeg;base64,${data.image_base64}`;
+    } else if (lastImage) {
+      // If current frame has no image, show the last cached image
+      const img = new Image();
+      img.onload = () => {
+        ctx.drawImage(img, 0, 0, width, height);
+      };
+      img.src = `data:image/jpeg;base64,${lastImage}`;
     } else {
-      // Waiting for image data
+      // No image yet - show waiting status
       ctx.fillStyle = '#ffffff';
       ctx.font = '14px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('Waiting for camera data...', width / 2, height / 2);
+      ctx.fillText('Waiting for camera frame...', width / 2, height / 2);
+
+      ctx.font = '11px sans-serif';
+      ctx.fillStyle = '#94a3b8';
+      ctx.fillText('(Images update every 1 second)', width / 2, height / 2 + 20);
     }
 
     // Draw frame info
@@ -50,10 +63,10 @@ export default function CameraView({ data, width = 400, height = 300 }: CameraVi
     ctx.fillRect(10, 10, 180, 40);
     ctx.fillStyle = '#ffffff';
     ctx.font = '10px monospace';
-    ctx.fillText(data.has_image ? `Live: ${data.original_width}x${data.original_height}` : 'No data', 15, 25);
+    ctx.fillText(data.has_image ? `Live: ${data.original_width}x${data.original_height}` : lastImage ? 'Cached frame' : 'No data', 15, 25);
     ctx.fillText('Source: NVIDIA r2b 2023', 15, 40);
 
-  }, [data, width, height]);
+  }, [data, width, height, lastImage]);
 
   return (
     <div style={{ width, height, background: '#1e293b', borderRadius: '8px', padding: '12px', border: '1px solid #e5e7eb' }}>
@@ -62,7 +75,7 @@ export default function CameraView({ data, width = 400, height = 300 }: CameraVi
           Camera Feed
         </h4>
         <span style={{ fontSize: '11px', color: '#94a3b8' }}>
-          {data.has_image ? 'Live (NVIDIA r2b)' : 'No data'}
+          {data.has_image ? 'Live (NVIDIA r2b)' : lastImage ? 'Cached frame' : 'No data'}
         </span>
       </div>
       <canvas
