@@ -22,10 +22,14 @@ from rosbags.typesys import Stores, get_typestore
 from PIL import Image as PILImage
 import io
 
-# Topic candidates
+# Topic candidates - all cameras from r2b dataset (RGB only for simplicity)
 CAMERA_TOPIC_CANDIDATES  = [
     "hawk_0_left_rgb_image",
+    "hawk_0_right_rgb_image",
+    "d455_1_rgb_image",
     "/hawk_0_left_rgb_image",
+    "/hawk_0_right_rgb_image",
+    "/d455_1_rgb_image",
     "/camera/image_raw",
     "/rgb/image_raw",
 ]
@@ -61,26 +65,32 @@ def collect_sensor_data(bag_path: str):
     if not typestore:
         raise Exception("Could not get typestore")
 
-    cam_data = []
+    cam_data = {}  # Dict of camera topic -> list of (t, data)
     lidar_data = []
     imu_data = []
 
     with AnyReader([bagpath], default_typestore=typestore) as reader:
         present = {c.topic for c in reader.connections}
-        cam_topic = pick_topic(CAMERA_TOPIC_CANDIDATES, present)
+        
+        # Find all camera topics
+        cam_topics = [t for t in CAMERA_TOPIC_CANDIDATES if t in present]
         lidar_topic = pick_topic(LIDAR_TOPIC_CANDIDATES, present)
         imu_topic = pick_topic(IMU_TOPIC_CANDIDATES, present)
 
-        if not cam_topic:
-            print("ERROR: Camera topic not found")
+        if not cam_topics:
+            print("ERROR: No camera topics found")
             sys.exit(1)
 
-        print(f"Camera topic: {cam_topic}")
+        print(f"Camera topics: {cam_topics}")
         print(f"LiDAR topic: {lidar_topic}")
         print(f"IMU topic: {imu_topic}")
 
-        # Camera
-        if cam_topic:
+        # Initialize camera data dict
+        for cam_topic in cam_topics:
+            cam_data[cam_topic] = []
+
+        # Cameras - process all found camera topics
+        for cam_topic in cam_topics:
             connections = [c for c in reader.connections if c.topic == cam_topic]
             for connection, timestamp, rawdata in reader.messages(connections=connections):
                 msg = reader.deserialize(rawdata, connection.msgtype)
@@ -88,27 +98,35 @@ def collect_sensor_data(bag_path: str):
 
                 # Downsample image
                 try:
-                    img_array = np.frombuffer(msg.data, dtype=np.uint8).reshape((msg.height, msg.width, 3))
-                    h, w = img_array.shape[:2]
-                    scale = MAX_IMAGE_SIZE / max(h, w)
-                    new_h, new_w = int(h * scale), int(w * scale)
-                    img_resized = np.array(PILImage.fromarray(img_array).resize((new_w, new_h)))
+                    if hasattr(msg, 'data') and msg.data is not None and len(msg.data) > 0:
+                        img_array = np.frombuffer(msg.data, dtype=np.uint8).reshape((msg.height, msg.width, 3))
+                        h, w = img_array.shape[:2]
+                        scale = MAX_IMAGE_SIZE / max(h, w)
+                        new_h, new_w = int(h * scale), int(w * scale)
+                        img_resized = np.array(PILImage.fromarray(img_array).resize((new_w, new_h)))
 
-                    buffered = io.BytesIO()
-                    PILImage.fromarray(img_resized).save(buffered, format="JPEG", quality=65)
-                    img_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
+                        buffered = io.BytesIO()
+                        PILImage.fromarray(img_resized).save(buffered, format="JPEG", quality=65)
+                        img_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
 
-                    cam_data.append((t, {
-                        'image_base64': img_base64,
-                        'width': new_w,
-                        'height': new_h,
-                        'has_image': True,
-                        'original_width': msg.width,
-                        'original_height': msg.height
-                    }))
+                        cam_data[cam_topic].append((t, {
+                            'image_base64': img_base64,
+                            'width': new_w,
+                            'height': new_h,
+                            'has_image': True,
+                            'original_width': msg.width,
+                            'original_height': msg.height
+                        }))
+                    else:
+                        cam_data[cam_topic].append((t, {
+                            'image_base64': None,
+                            'width': 0,
+                            'height': 0,
+                            'has_image': False
+                        }))
                 except Exception as e:
-                    print(f"Warning: Could not process image at t={t}: {e}")
-                    cam_data.append((t, {
+                    print(f"Warning: Could not process image from {cam_topic} at t={t}: {e}")
+                    cam_data[cam_topic].append((t, {
                         'image_base64': None,
                         'width': 0,
                         'height': 0,
@@ -187,15 +205,21 @@ def collect_sensor_data(bag_path: str):
                         'has_imu': False
                     }))
 
-        # Compute duration
-        all_times = [t for t, _ in cam_data]
+        # Compute duration from all sensor data
+        all_times = []
+        for cam_topic, cam_list in cam_data.items():
+            all_times.extend([t for t, _ in cam_list])
+        all_times.extend([t for t, _ in lidar_data])
+        all_times.extend([t for t, _ in imu_data])
+        
         if all_times:
             t_start = min(all_times)
             t_end = max(all_times)
             duration = t_end - t_start
 
             # Make times relative
-            cam_data = [(t - t_start, m) for t, m in cam_data]
+            for cam_topic in cam_data:
+                cam_data[cam_topic] = [(t - t_start, m) for t, m in cam_data[cam_topic]]
             lidar_data = [(t - t_start, m) for t, m in lidar_data]
             imu_data = [(t - t_start, m) for t, m in imu_data]
         else:
@@ -218,32 +242,41 @@ def get_latest_data(data_list, query_t):
 
 
 def generate(bag_path: str, args):
-    cam_data, lidar_data, imu_data, duration = collect_sensor_data(bag_path)
+    cam_data_dict, lidar_data, imu_data, duration = collect_sensor_data(bag_path)
 
-    print(f"Collected {len(cam_data)} camera frames, {len(lidar_data)} LiDAR scans, {len(imu_data)} IMU readings")
+    # Count total camera frames across all cameras
+    total_cam_frames = sum(len(frames) for frames in cam_data_dict.values())
+    print(f"Collected {total_cam_frames} camera frames from {len(cam_data_dict)} cameras, {len(lidar_data)} LiDAR scans, {len(imu_data)} IMU readings")
     print(f"Duration: {duration:.1f}s")
 
     # Count successful extractions
-    cam_success = sum(1 for _, m in cam_data if m.get('has_image'))
+    cam_success = sum(sum(1 for _, m in frames if m.get('has_image')) for frames in cam_data_dict.values())
     lidar_success = sum(1 for _, m in lidar_data if m.get('has_lidar'))
     imu_success = sum(1 for _, m in imu_data if m.get('has_imu'))
 
     print(f"Successfully extracted: {cam_success} images, {lidar_success} LiDAR scans, {imu_success} IMU readings")
+    print(f"Camera topics: {list(cam_data_dict.keys())}")
 
     events = []
     t = 0.0
 
     while t <= duration:
-        # Get latest sensor data
-        cam_metrics = get_latest_data(cam_data, t)
+        # Get latest sensor data for all cameras
+        cameras = {}
+        for cam_topic, cam_list in cam_data_dict.items():
+            cameras[cam_topic] = get_latest_data(cam_list, t)
+        
         lidar_metrics = get_latest_data(lidar_data, t)
         imu_metrics = get_latest_data(imu_data, t)
 
-        # Compute sensor ages
-        cam_ts = [dt for dt, _ in cam_data]
+        # Compute sensor ages (use the most recent camera timestamp)
+        all_cam_ts = []
+        for cam_list in cam_data_dict.values():
+            all_cam_ts.extend([dt for dt, _ in cam_list])
+        
         lidar_ts = [dt for dt, _ in lidar_data]
 
-        cam_age = 9999.0 if not cam_ts else (t - max([ts for ts in cam_ts if ts <= t], default=t)) * 1000
+        cam_age = 9999.0 if not all_cam_ts else (t - max([ts for ts in all_cam_ts if ts <= t], default=t)) * 1000
         lidar_age = 9999.0 if not lidar_ts else (t - max([ts for ts in lidar_ts if ts <= t], default=t)) * 1000
 
         # Only include image data every 10 frames (1 second) to save bandwidth
@@ -254,10 +287,10 @@ def generate(bag_path: str, args):
             'source': 'r2b_live_telemetry',
             'cam_age_ms': round(cam_age, 1),
             'lidar_age_ms': round(lidar_age, 1),
-            'camera': cam_metrics if include_image else None,
+            'cameras': cameras if include_image else None,
             'lidar': lidar_metrics,
             'imu': imu_metrics,
-            'cam_rate': round(len([ts for ts in cam_ts if t-1 <= ts <= t]), 1),
+            'cam_rate': round(len([ts for ts in all_cam_ts if t-1 <= ts <= t]), 1),
             'lidar_rate': round(len([ts for ts in lidar_ts if t-1 <= ts <= t]), 1),
         }
 

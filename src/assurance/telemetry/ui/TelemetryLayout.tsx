@@ -34,6 +34,7 @@ export default function TelemetryLayout({ sseUrl, onBack }: TelemetryLayoutProps
   }, [sseUrl, buffer]);
 
   const latestCamera = useMemo(() => buffer.getLatestCameraData(), [telemetryData]);
+  const cameraTopics = useMemo(() => buffer.getAllCameraTopics(), [telemetryData]);
   const latestLidar = useMemo(() => buffer.getLatestLidarData(), [telemetryData]);
   const imuData = useMemo(() => buffer.getIMUData(), [telemetryData]);
   const timelineData = useMemo(() => buffer.getSensorTimelineData(), [telemetryData]);
@@ -78,31 +79,39 @@ export default function TelemetryLayout({ sseUrl, onBack }: TelemetryLayoutProps
       ) : (
         <>
           {/* Engineering grid layout */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px' }}>
-            {/* Camera Feed */}
-            <div>
-              <CameraView
-                data={latestCamera || { width: 0, height: 0, has_image: false }}
-                width={500}
-                height={375}
-              />
-            </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
+            {/* Camera Feeds - show all 3 cameras */}
+            {cameraTopics.map((topic, idx) => {
+              const camData = typeof latestCamera === 'object' && latestCamera[topic] 
+                ? latestCamera[topic] 
+                : { width: 0, height: 0, has_image: false };
+              return (
+                <div key={topic}>
+                  <CameraView
+                    data={camData}
+                    width={335}
+                    height={250}
+                    label={topic.replace(/_/g, ' ')}
+                  />
+                </div>
+              );
+            })}
 
-            {/* LiDAR Point Cloud */}
-            <div>
+            {/* LiDAR Point Cloud - spans 2 columns */}
+            <div style={{ gridColumn: '1 / 3' }}>
               <Lidar2DView
                 data={latestLidar || { points: [], num_points: 0, has_lidar: false }}
-                width={500}
+                width={686}
                 height={375}
               />
             </div>
 
-            {/* IMU Telemetry - spans full width */}
-            <div style={{ gridColumn: '1 / -1' }}>
+            {/* IMU Telemetry - spans 1 column */}
+            <div style={{ gridColumn: '3 / 4' }}>
               <IMUGraph
                 data={imuData}
-                width={1016}
-                height={250}
+                width={335}
+                height={375}
               />
             </div>
 

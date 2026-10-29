@@ -14,9 +14,10 @@ interface CameraViewProps {
   data: CameraData;
   width?: number;
   height?: number;
+  label?: string;
 }
 
-export default function CameraView({ data, width = 400, height = 300 }: CameraViewProps) {
+export default function CameraView({ data, width = 400, height = 300, label }: CameraViewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [lastImage, setLastImage] = useState<string | null>(null);
 
@@ -72,7 +73,7 @@ export default function CameraView({ data, width = 400, height = 300 }: CameraVi
     <div style={{ width, height, background: '#1e293b', borderRadius: '8px', padding: '12px', border: '1px solid #e5e7eb' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
         <h4 style={{ margin: 0, fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>
-          Camera Feed
+          {label || 'Camera Feed'}
         </h4>
         <span style={{ fontSize: '11px', color: '#94a3b8' }}>
           {data.has_image ? 'Live (NVIDIA r2b)' : lastImage ? 'Cached frame' : 'No data'}

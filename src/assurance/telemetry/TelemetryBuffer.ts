@@ -61,7 +61,30 @@ export class TelemetryBuffer {
   }
 
   getLatestCameraData() {
-    return this.buffer.length > 0 ? this.buffer[this.buffer.length - 1].camera : null;
+    if (this.buffer.length === 0) return null;
+    const latest = this.buffer[this.buffer.length - 1];
+    // Handle both old format (single camera) and new format (multiple cameras)
+    if (latest.camera) return latest.camera;
+    if (latest.cameras) return latest.cameras;
+    return null;
+  }
+
+  getLatestCameraDataForTopic(topic: string) {
+    if (this.buffer.length === 0) return null;
+    const latest = this.buffer[this.buffer.length - 1];
+    if (latest.cameras && latest.cameras[topic]) {
+      return latest.cameras[topic];
+    }
+    return null;
+  }
+
+  getAllCameraTopics() {
+    if (this.buffer.length === 0) return [];
+    const latest = this.buffer[this.buffer.length - 1];
+    if (latest.cameras) {
+      return Object.keys(latest.cameras);
+    }
+    return [];
   }
 
   getLatestLidarData() {

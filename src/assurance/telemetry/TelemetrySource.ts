@@ -13,6 +13,14 @@ export interface TelemetryData {
     original_width?: number;
     original_height?: number;
   };
+  cameras?: Record<string, {
+    image_base64?: string | null;
+    width: number;
+    height: number;
+    has_image: boolean;
+    original_width?: number;
+    original_height?: number;
+  }>;
   lidar?: {
     points: Array<{ x: number; y: number; z: number }>;
     num_points: number;
