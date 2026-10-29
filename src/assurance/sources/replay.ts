@@ -95,6 +95,7 @@ export class ReplaySource implements EvidenceSource {
       this.notifySnapshot(s);
     } else {
       // SSE stream format: convert raw fields to EvidenceSnapshot
+      // Use dataset-provided violation flags if available (from converter)
       const camAge = line.cam_age_ms ?? line.camera_age_ms ?? 0;
       const lidarAge = line.lidar_age_ms ?? 0;
       const tfAge = line.tf_age_ms ?? 45;
@@ -102,13 +103,17 @@ export class ReplaySource implements EvidenceSource {
       const calib = line.calibration_valid ?? true;
       const agree = line.sensors_agree ?? true;
 
+      // Use dataset's violation flags if present, otherwise calculate
+      const camViolated = line.cam_violated ?? (camAge > 200);
+      const lidarViolated = line.lidar_violated ?? (lidarAge > 200);
+
       const items: Record<string, EvidenceItem> = {
         'camera_age_ms': {
           id: 'camera_age_ms',
           label: 'Camera freshness',
           value: String(camAge),
           unit: 'ms',
-          status: camAge > 200 ? 'bad' : 'ok',
+          status: camViolated ? 'bad' : 'ok',
           source: 'replay',
           t: line.t
         },
@@ -117,7 +122,7 @@ export class ReplaySource implements EvidenceSource {
           label: 'LiDAR freshness',
           value: String(lidarAge),
           unit: 'ms',
-          status: lidarAge > 200 ? 'bad' : 'ok',
+          status: lidarViolated ? 'bad' : 'ok',
           source: 'replay',
           t: line.t
         },

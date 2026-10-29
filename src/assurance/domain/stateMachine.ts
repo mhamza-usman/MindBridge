@@ -52,6 +52,16 @@ export class AssuranceStateMachine {
       }
     }
 
+    // Special case: if all sensors have 9999.0 age (startup condition), treat as Autonomous
+    // This handles the initial frames before sensors have published data
+    const cameraAge = parseFloat(contractStatus['camera_age_ms']?.value || '0');
+    const lidarAge = parseFloat(contractStatus['lidar_age_ms']?.value || '0');
+    if (cameraAge >= 9000 && lidarAge >= 9000 && t < 1.0) {
+      // Startup phase - both sensors have no data yet, treat as Autonomous
+      unknownReasons = [];
+      degradedReasons = [];
+    }
+
     if (unknownReasons.length > 0) {
       rawState = 'Unknown';
     } else if (fusionConflict) {
@@ -80,9 +90,9 @@ export class AssuranceStateMachine {
     if (STATE_RANK[rawState] < STATE_RANK[this.currentState]) {
       if (this.recoveryStartTime === null) {
         this.recoveryStartTime = t;
-        rawState = this.currentState; 
+        rawState = this.currentState;
       } else if (t - this.recoveryStartTime < this.config.holdTimeMs) {
-        rawState = this.currentState; 
+        rawState = this.currentState;
       } else {
         const currRank = STATE_RANK[this.currentState];
         const newRank = Math.max(STATE_RANK[rawState], currRank - 1);
@@ -90,7 +100,7 @@ export class AssuranceStateMachine {
         this.recoveryStartTime = t;
       }
     } else {
-      this.recoveryStartTime = null; 
+      this.recoveryStartTime = null;
     }
 
     this.currentState = rawState;
@@ -105,7 +115,7 @@ export class AssuranceStateMachine {
       recommendation: rec,
       why: [...blockReasons, ...unknownReasons, ...degradedReasons],
       violated: degradedReasons,
-      known: [], 
+      known: [],
       unknown: unknownReasons,
       nesyMode
     };
