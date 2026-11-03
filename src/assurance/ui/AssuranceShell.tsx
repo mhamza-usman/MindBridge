@@ -1,7 +1,6 @@
 "use client";
 import React, { useEffect, useState, useMemo } from "react";
 import "./AssuranceStyles.css";
-import { SyntheticSource } from "../sources/synthetic";
 import { ReplaySource, ReplaySourceOptions } from "../sources/replay";
 import { getDefaultContract } from "../contract/loader";
 import { evaluateContract } from "../contract/evaluator";
@@ -17,6 +16,7 @@ import { ReplayScrubber } from "./ReplayScrubber";
 import { MonitoringPanel } from "./MonitoringPanel";
 import TelemetryLayout from "../telemetry/ui/TelemetryLayout";
 import DatasetImporter from "./DatasetImporter";
+import CameraWall from "./CameraWall";
 
 const STATE_COLORS: Record<AssuranceState, string> = {
   Autonomous: 'var(--auto)', Degraded: 'var(--deg)', Supervised: 'var(--sup)', Unknown: 'var(--unk)', Blocked: 'var(--blk)'
@@ -34,9 +34,9 @@ export default function AssuranceShell() {
   // Accumulate evidence snapshots for the monitoring panel
   const [evidenceHistory, setEvidenceHistory] = useState<EvidenceSnapshot[]>([]);
 
-  // Source type tracking
-  const [sourceType, setSourceType] = useState<'synthetic'|'replay'|'telemetry'>('synthetic');
-  const [replayScenario, setReplayScenario] = useState<'r2b_nominal'|'r2b_stale'|'r2b_conflict'|'r2b_unknown' | null>(null);
+  // Source type tracking - default to replay (no synthetic)
+  const [sourceType, setSourceType] = useState<'replay'|'telemetry'>('replay');
+  const [replayScenario, setReplayScenario] = useState<'r2b_nominal'|'r2b_stale'|'r2b_conflict'|'r2b_unknown'>('r2b_nominal');
 
   // Replay view state
   const [incidents, setIncidents] = useState<IncidentBundle[]>([]);
@@ -64,7 +64,7 @@ export default function AssuranceShell() {
     if (sourceType === 'replay' && replayScenario) {
       return new ReplaySource({ sseUrl: `/api/replay/${replayScenario}` });
     }
-    return new SyntheticSource();
+    return new ReplaySource({ sseUrl: `/api/replay/r2b_nominal` });
   }, [sourceType, replayScenario]);
   const contract = useMemo(() => getDefaultContract(), []);
   const sm = useMemo(() => new AssuranceStateMachine(), []);
@@ -76,9 +76,6 @@ export default function AssuranceShell() {
   }, [recorder, contract, sourceType]);
 
   useEffect(() => {
-    if (sourceType === 'synthetic') {
-      (source as SyntheticSource).setScenario(scenario);
-    }
     // Reset history when source changes
     setEvidenceHistory([]);
     source.onSnapshot((s) => {
@@ -189,6 +186,18 @@ export default function AssuranceShell() {
         <TelemetryLayout
           sseUrl="/api/telemetry/r2b_telemetry"
           onBack={() => setSourceType('replay')}
+        />
+      </div>
+    );
+  }
+
+  // Show camera wall when in camera mode
+  if (view === 'camera') {
+    return (
+      <div className="v2-root">
+        <CameraWall
+          sseUrl="/api/telemetry/r2b_telemetry"
+          onBack={() => setView('live')}
         />
       </div>
     );
@@ -547,6 +556,14 @@ export default function AssuranceShell() {
                     }}
                   >
                     Evidence missing
+                  </button>
+                  <button
+                    className="v2-btn"
+                    style={{background: view === 'camera' ? 'var(--accent)' : undefined,
+                            color: view === 'camera' ? '#fff' : undefined}}
+                    onClick={() => setView('camera')}
+                  >
+                    Camera Wall
                   </button>
                 </div>
                 <div style={{marginTop:'12px', display:'flex', gap:'8px', flexWrap:'wrap', marginBottom:'12px'}}>
