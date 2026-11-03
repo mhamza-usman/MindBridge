@@ -17,6 +17,7 @@ import { MonitoringPanel } from "./MonitoringPanel";
 import TelemetryLayout from "../telemetry/ui/TelemetryLayout";
 import DatasetImporter from "./DatasetImporter";
 import CameraWall from "./CameraWall";
+import { checkAlerts, Alert } from "../alerts/AlertRule";
 
 const STATE_COLORS: Record<AssuranceState, string> = {
   Autonomous: 'var(--auto)', Degraded: 'var(--deg)', Supervised: 'var(--sup)', Unknown: 'var(--unk)', Blocked: 'var(--blk)'
@@ -41,6 +42,7 @@ export default function AssuranceShell() {
   // Replay view state
   const [incidents, setIncidents] = useState<IncidentBundle[]>([]);
   const [selectedIncident, setSelectedIncident] = useState<IncidentBundle | null>(null);
+  const [alerts, setAlerts] = useState<Alert[]>([]);
 
   // Fleet flag — read from env or query string
   const fleetEnabled =
