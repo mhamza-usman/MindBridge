@@ -23,6 +23,9 @@ export function FleetView({ aggregator, onSelectRobot, sseUrl }: FleetViewProps)
   const [snap, setSnap] = useState<FleetSnapshot>(aggregator.getSnapshot());
   const [logMsg, setLogMsg] = useState('');
 
+  // Dataset has no multi-robot data - show "Not in dataset" message
+  const hasMultiRobotData = false; // Dataset is single robot only
+
   // In-process subscription (primary)
   useEffect(() => {
     return aggregator.subscribe(setSnap);
@@ -60,30 +63,52 @@ export function FleetView({ aggregator, onSelectRobot, sseUrl }: FleetViewProps)
     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
 
       {/* Fleet banner */}
-      <div className="v2-panel" style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '12px 18px' }}>
-        <div>
-          <div style={{ fontSize: '11px', color: 'var(--ink2)' }}>Fleet health</div>
-          <div style={{ fontSize: '28px', fontWeight: 700, color: healthColor, lineHeight: 1.1 }}>
-            {snap.healthPct}%
-          </div>
-          <div style={{ fontSize: '11px', color: healthColor }}>
-            {snap.healthPct >= 75 ? 'Within normal range' : 'Below 75% — review needed'}
+      {!hasMultiRobotData ? (
+        <div className="v2-panel" style={{ padding: '24px', textAlign: 'center' }}>
+          <h2 style={{ margin: '0 0 12px 0', fontSize: '18px', color: '#111827' }}>
+            Multi-robot data not in dataset
+          </h2>
+          <p style={{ margin: '0 0 16px 0', fontSize: '13px', color: '#6b7280', lineHeight: '1.5' }}>
+            The NVIDIA r2b 2023 dataset contains sensor data from a single robot configuration.
+            To use the fleet view, you need a dataset with multiple robots.
+          </p>
+          <div style={{ 
+            padding: '12px', 
+            background: '#fef3c7', 
+            borderRadius: '8px', 
+            border: '1px solid #fcd34d',
+            fontSize: '12px',
+            color: '#92400e'
+          }}>
+            <strong>DERIVED:</strong> Fleet view would require multi-robot pose data
           </div>
         </div>
+      ) : (
+        <>
+          <div className="v2-panel" style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '12px 18px' }}>
+            <div>
+              <div style={{ fontSize: '11px', color: 'var(--ink2)' }}>Fleet health</div>
+              <div style={{ fontSize: '28px', fontWeight: 700, color: healthColor, lineHeight: 1.1 }}>
+                {snap.healthPct}%
+              </div>
+              <div style={{ fontSize: '11px', color: healthColor }}>
+                {snap.healthPct >= 75 ? 'Within normal range' : 'Below 75% — review needed'}
+              </div>
+            </div>
 
-        <div style={{ width: '1px', background: 'var(--line)', alignSelf: 'stretch' }} />
+            <div style={{ width: '1px', background: 'var(--line)', alignSelf: 'stretch' }} />
 
-        <div style={{ flex: 1 }}>
-          {alertRobots.length === 0 ? (
-            <span style={{ fontSize: '13px', color: 'var(--ink2)' }}>All robots Autonomous or Degraded. No banner alerts.</span>
-          ) : (
-            <>
-              <div style={{ fontSize: '11px', color: 'var(--ink2)', marginBottom: '6px' }}>Requires attention</div>
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                {alertRobots.map(r => (
-                  <button
-                    key={r.robot_id}
-                    onClick={() => onSelectRobot?.(r.robot_id)}
+            <div style={{ flex: 1 }}>
+              {alertRobots.length === 0 ? (
+                <span style={{ fontSize: '13px', color: 'var(--ink2)' }}>All robots Autonomous or Degraded. No banner alerts.</span>
+              ) : (
+                <>
+                  <div style={{ fontSize: '11px', color: 'var(--ink2)', marginBottom: '6px' }}>Requires attention</div>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    {alertRobots.map(r => (
+                      <button
+                        key={r.robot_id}
+                        onClick={() => onSelectRobot?.(r.robot_id)}
                     className="v2-chip"
                     style={{
                       '--c': STATE_COLOR[r.state],
@@ -135,9 +160,11 @@ export function FleetView({ aggregator, onSelectRobot, sseUrl }: FleetViewProps)
           </button>
         </div>
       </div>
+      </>
+      )}
 
       {/* Anomaly flag detail */}
-      {snap.rollout.anomaly_flagged && snap.rollout.flag_reason && (
+      {hasMultiRobotData && snap.rollout.anomaly_flagged && snap.rollout.flag_reason && (
         <div className="v2-panel" style={{ background: 'rgba(196,22,42,.06)', border: '1px solid rgba(196,22,42,.20)', padding: '10px 16px' }}>
           <b style={{ color: '#c4162a', fontSize: '12px' }}>⚠ Rollout anomaly</b>
           <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--ink)' }}>{snap.rollout.flag_reason}</p>
