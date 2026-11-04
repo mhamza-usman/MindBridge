@@ -29,7 +29,6 @@ const ALL_MODES: NeSyMode[] = ['Autonomous', 'Monitoring', 'Advisory', 'Interven
 
 export default function AssuranceShell() {
   const [view, setView] = useState('live');
-  const [scenario, setScenario] = useState<'nominal'|'stale'|'conflict'|'unknown'>('nominal');
   const [evidence, setEvidence] = useState<EvidenceSnapshot | null>(null);
   const [logMsg, setLogMsg] = useState("");
   // Accumulate evidence snapshots for the monitoring panel
@@ -86,12 +85,18 @@ export default function AssuranceShell() {
         const next = [...prev, s];
         return next.length > 300 ? next.slice(-300) : next;
       });
+      
+      // Check for new alerts
+      const newAlerts = checkAlerts(s, alerts);
+      if (newAlerts.length > 0) {
+        setAlerts(prev => [...prev, ...newAlerts]);
+      }
     });
     source.start();
     return () => source.stop();
-  }, [source, scenario, sourceType]);
+  }, [sourceType, replayScenario]);
 
-  // Derive NeSy mode: for replay use dataset's state field; for synthetic use scenario name
+  // Derive NeSy mode: for replay use dataset's state field
   const nesyMode: NeSyMode = (() => {
     if (sourceType === 'replay' && evidence) {
       const percPct = parseFloat(evidence.items['perception_pct']?.value ?? '100');
@@ -103,7 +108,7 @@ export default function AssuranceShell() {
       if (camBad || percPct < 70) return 'Monitoring';
       return 'Autonomous';
     }
-    return scenario === 'stale' || scenario === 'conflict' ? 'Advisory' : scenario === 'unknown' ? 'Emergency' : 'Autonomous';
+    return 'Autonomous';
   })();
   let res = null;
   let checks = {};
@@ -118,7 +123,7 @@ export default function AssuranceShell() {
       evidence.items['sensors_agree']?.status === 'bad' ||
       evidence.items['glare_detected']?.value === 'true'
     );
-    const conflict = scenario === 'conflict' || replayConflict;
+    const conflict = replayConflict;
     if (conflict) {
       const mockFusionInput: FusionInput = {
         syncSkewMs: 10,
@@ -360,10 +365,10 @@ export default function AssuranceShell() {
                 // Wire gauges directly from evidence — works for both synthetic and replay
                 const percVal = evidence.items['perception_pct']?.value
                   ? Math.min(100, Math.max(0, Math.round(parseFloat(evidence.items['perception_pct'].value))))
-                  : (scenario==='nominal'?92:scenario==='stale'?68:scenario==='conflict'?71:0);
+                  : 92;
                 const uncVal = evidence.items['uncertainty_pct']?.value
                   ? Math.min(100, Math.max(0, Math.round(parseFloat(evidence.items['uncertainty_pct'].value))))
-                  : (scenario==='nominal'?8:scenario==='stale'?41:scenario==='conflict'?36:100);
+                  : 8;
                 // Plan certainty: derived from perception and uncertainty together
                 const planVal = Math.max(0, Math.round(percVal * 0.6 + (100 - uncVal) * 0.4));
 
