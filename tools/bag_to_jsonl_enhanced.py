@@ -141,25 +141,46 @@ def collect_sensor_data(bag_path: str):
                 t = timestamp / 1_000_000_000.0
 
                 try:
-                    # PointCloud2 has fields: x, y, z, intensity, etc.
-                    # data is bytes, need to parse based on point_step
+                    # PointCloud2 fields are described in msg.fields; do NOT assume
+                    # x/y/z live at byte offsets 0/4/8 (vendor layouts differ).
                     point_step = msg.point_step
                     num_points = len(msg.data) // point_step
 
-                    points = []
-                    for i in range(min(100, num_points)):  # Limit to 100 points
-                        offset = i * point_step
-                        if offset + 12 <= len(msg.data):
-                            x = np.frombuffer(msg.data[offset:offset+4], dtype=np.float32)[0]
-                            y = np.frombuffer(msg.data[offset+4:offset+8], dtype=np.float32)[0]
-                            z = np.frombuffer(msg.data[offset+8:offset+12], dtype=np.float32)[0]
+                    # Map field name -> (offset, datatype). Datatype 7=FLOAT32, 8=FLOAT64.
+                    field_map = {}
+                    for f in getattr(msg, 'fields', []):
+                        field_map[getattr(f, 'name', '')] = (int(f.offset), int(f.datatype))
 
+                    def read_scalar(buf, offset, datatype):
+                        if datatype == 7:   # FLOAT32
+                            return float(np.frombuffer(buf[offset:offset+4], dtype=np.float32)[0])
+                        if datatype == 8:   # FLOAT64
+                            return float(np.frombuffer(buf[offset:offset+8], dtype=np.float64)[0])
+                        return None
+
+                    has_xyz = all(k in field_map for k in ('x', 'y', 'z'))
+                    points = []
+                    if has_xyz:
+                        ox, dx = field_map['x']
+                        oy, dy = field_map['y']
+                        oz, dz = field_map['z']
+                        max_read = min(num_points, 400)  # subsample for bandwidth
+                        stride = max(1, num_points // max_read)
+                        for i in range(0, num_points, stride):
+                            offset = i * point_step
+                            x = read_scalar(msg.data, offset + ox, dx)
+                            y = read_scalar(msg.data, offset + oy, dy)
+                            z = read_scalar(msg.data, offset + oz, dz)
+                            if x is None or y is None or z is None:
+                                continue
                             if -50 < x < 50 and -50 < y < 50 and -50 < z < 50:
                                 points.append({
-                                    'x': round(float(x), 2),
-                                    'y': round(float(y), 2),
-                                    'z': round(float(z), 2)
+                                    'x': round(x, 2),
+                                    'y': round(y, 2),
+                                    'z': round(z, 2)
                                 })
+                    else:
+                        print(f"Warning: PointCloud2 fields {list(field_map)} lack x/y/z; skipping frame at t={t}")
 
                     lidar_data.append((t, {
                         'points': points,

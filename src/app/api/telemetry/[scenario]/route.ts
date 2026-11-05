@@ -29,15 +29,23 @@ export async function GET(
     const stream = new ReadableStream({
       async start(controller) {
         try {
-          for (const line of lines) {
-            controller.enqueue(encoder.encode(`data: ${line}\n\n`));
+          let idx = 0;
+          // Loop continuously so the dashboard stays live
+          while (true) {
+            if (idx >= lines.length) {
+              idx = 1; // skip t=0 startup frame on loop
+            }
+            controller.enqueue(encoder.encode(`data: ${lines[idx]}\n\n`));
+            idx++;
             await new Promise(resolve => setTimeout(resolve, 100)); // 100ms intervals
           }
-          controller.close();
         } catch (error) {
           console.error('Stream error:', error);
           controller.error(error);
         }
+      },
+      cancel() {
+        // client disconnected
       },
     });
 

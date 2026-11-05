@@ -4,6 +4,7 @@ import IMUGraph from '../components/IMUGraph';
 import SensorTimeline from '../components/SensorTimeline';
 import Lidar2DView from '../components/Lidar2DView';
 import CameraView from '../components/CameraView';
+import FusionView from '../components/FusionView';
 import { TelemetrySource, TelemetryData } from '../TelemetrySource';
 import { TelemetryBuffer } from '../TelemetryBuffer';
 
@@ -15,6 +16,7 @@ interface TelemetryLayoutProps {
 export default function TelemetryLayout({ sseUrl, onBack }: TelemetryLayoutProps) {
   const [telemetryData, setTelemetryData] = useState<TelemetryData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fusionMode, setFusionMode] = useState(false);
   const buffer = useMemo(() => new TelemetryBuffer(1000, 60), []);
 
   useEffect(() => {
@@ -54,21 +56,38 @@ export default function TelemetryLayout({ sseUrl, onBack }: TelemetryLayoutProps
             Real-time sensor data from NVIDIA r2b 2023 dataset
           </p>
         </div>
-        <button
-          onClick={onBack}
-          style={{
-            padding: '8px 16px',
-            borderRadius: '6px',
-            border: '1px solid #d1d5db',
-            background: '#ffffff',
-            color: '#374151',
-            fontSize: '13px',
-            fontWeight: 500,
-            cursor: 'pointer',
-          }}
-        >
-          ← Back to Home
-        </button>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button
+            onClick={() => setFusionMode(f => !f)}
+            style={{
+              padding: '8px 16px',
+              borderRadius: '6px',
+              border: '1px solid #d1d5db',
+              background: fusionMode ? '#0a66ff' : '#ffffff',
+              color: fusionMode ? '#ffffff' : '#374151',
+              fontSize: '13px',
+              fontWeight: 500,
+              cursor: 'pointer',
+            }}
+          >
+            {fusionMode ? 'Exit Fusion' : 'Sensor Fusion'}
+          </button>
+          <button
+            onClick={onBack}
+            style={{
+              padding: '8px 16px',
+              borderRadius: '6px',
+              border: '1px solid #d1d5db',
+              background: '#ffffff',
+              color: '#374151',
+              fontSize: '13px',
+              fontWeight: 500,
+              cursor: 'pointer',
+            }}
+          >
+            ← Back to Home
+          </button>
+        </div>
       </div>
 
       {loading ? (
@@ -79,6 +98,19 @@ export default function TelemetryLayout({ sseUrl, onBack }: TelemetryLayoutProps
         <>
           {/* Engineering grid layout */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
+            {fusionMode ? (
+              <div style={{ gridColumn: '1 / -1' }}>
+                <FusionView
+                  cameraKey="hawk_0_left_rgb_image"
+                  camera={buffer.getLatestCameraDataForTopic('hawk_0_left_rgb_image')}
+                  lidar={latestLidar ?? null}
+                  width={1016}
+                  height={420}
+                  label="Sensor fusion — LiDAR points projected onto hawk_0_left_rgb using bag calibration (CameraInfo + tf_static)"
+                />
+              </div>
+            ) : (
+            <>
             {/* Camera Feeds - show all 3 cameras */}
             {cameraTopics.map((topic) => {
               const camData = buffer.getLatestCameraDataForTopic(topic)
@@ -94,6 +126,8 @@ export default function TelemetryLayout({ sseUrl, onBack }: TelemetryLayoutProps
                 </div>
               );
             })}
+            </>
+            )}
 
             {/* LiDAR Point Cloud - spans 2 columns */}
             <div style={{ gridColumn: '1 / 3' }}>
