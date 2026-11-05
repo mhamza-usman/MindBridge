@@ -106,7 +106,7 @@ export default function TelemetryLayout({ sseUrl, onBack }: TelemetryLayoutProps
                   lidar={latestLidar ?? null}
                   width={1016}
                   height={420}
-                  label="Sensor fusion — LiDAR points projected onto hawk_0_left_rgb using bag calibration (CameraInfo + tf_static)"
+                  label="DERIVED: LiDAR points projected onto hawk_0_left_rgb using bag calibration (CameraInfo + tf_static). Approximate alignment."
                 />
               </div>
             ) : (
