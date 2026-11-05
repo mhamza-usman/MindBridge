@@ -13,10 +13,58 @@ interface TelemetryLayoutProps {
   onBack: () => void;
 }
 
+/** Collapsible panel wrapper: slim header bar when collapsed. */
+function Panel({
+  id, title, collapsed, onToggle, span, children,
+}: {
+  id: string; title: string; collapsed: boolean; onToggle: (id: string) => void;
+  span?: string; children: React.ReactNode;
+}) {
+  if (collapsed) {
+    return (
+      <button
+        onClick={() => onToggle(id)}
+        style={{
+          gridColumn: span,
+          padding: '8px 14px',
+          borderRadius: '8px',
+          border: '1px dashed #d1d5db',
+          background: '#f9fafb',
+          color: '#6b7280',
+          fontSize: '12px',
+          cursor: 'pointer',
+          textAlign: 'left',
+        }}
+      >
+        ▸ {title} (collapsed)
+      </button>
+    );
+  }
+  return (
+    <div style={{ gridColumn: span, position: 'relative' }}>
+      <button
+        onClick={() => onToggle(id)}
+        title="Collapse panel"
+        style={{
+          position: 'absolute', bottom: 6, right: 6, zIndex: 2,
+          width: 22, height: 22, borderRadius: 6, border: '1px solid #e5e7eb',
+          background: 'rgba(255,255,255,.85)', color: '#6b7280',
+          fontSize: 11, cursor: 'pointer', lineHeight: 1,
+        }}
+      >
+        –
+      </button>
+      {children}
+    </div>
+  );
+}
+
 export default function TelemetryLayout({ sseUrl, onBack }: TelemetryLayoutProps) {
   const [telemetryData, setTelemetryData] = useState<TelemetryData[]>([]);
   const [loading, setLoading] = useState(true);
   const [fusionMode, setFusionMode] = useState(false);
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const togglePanel = (id: string) => setCollapsed(c => ({ ...c, [id]: !c[id] }));
   const buffer = useMemo(() => new TelemetryBuffer(1000, 60), []);
 
   useEffect(() => {
@@ -99,7 +147,7 @@ export default function TelemetryLayout({ sseUrl, onBack }: TelemetryLayoutProps
           {/* Engineering grid layout */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
             {fusionMode ? (
-              <div style={{ gridColumn: '1 / -1' }}>
+              <Panel id="fusion" title="Sensor Fusion" collapsed={!!collapsed.fusion} onToggle={togglePanel} span="1 / -1">
                 <FusionView
                   cameraKey="hawk_0_left_rgb_image"
                   camera={buffer.getLatestCameraDataForTopic('hawk_0_left_rgb_image')}
@@ -108,7 +156,7 @@ export default function TelemetryLayout({ sseUrl, onBack }: TelemetryLayoutProps
                   height={420}
                   label="DERIVED: LiDAR points projected onto hawk_0_left_rgb using bag calibration (CameraInfo + tf_static). Approximate alignment."
                 />
-              </div>
+              </Panel>
             ) : (
             <>
             {/* Camera Feeds - show all 3 cameras */}
@@ -116,45 +164,45 @@ export default function TelemetryLayout({ sseUrl, onBack }: TelemetryLayoutProps
               const camData = buffer.getLatestCameraDataForTopic(topic)
                 || { width: 0, height: 0, has_image: false };
               return (
-                <div key={topic}>
+                <Panel key={topic} id={`cam-${topic}`} title={topic.replace(/_/g, ' ')} collapsed={!!collapsed[`cam-${topic}`]} onToggle={togglePanel}>
                   <CameraView
                     data={camData}
                     width={335}
                     height={250}
                     label={topic.replace(/_/g, ' ')}
                   />
-                </div>
+                </Panel>
               );
             })}
             </>
             )}
 
             {/* LiDAR Point Cloud - spans 2 columns */}
-            <div style={{ gridColumn: '1 / 3' }}>
+            <Panel id="lidar" title="LiDAR 2D" collapsed={!!collapsed.lidar} onToggle={togglePanel} span="1 / 3">
               <Lidar2DView
                 data={latestLidar || { points: [], num_points: 0, has_lidar: false }}
                 width={686}
                 height={375}
               />
-            </div>
+            </Panel>
 
             {/* IMU Telemetry - spans 1 column */}
-            <div style={{ gridColumn: '3 / 4' }}>
+            <Panel id="imu" title="IMU" collapsed={!!collapsed.imu} onToggle={togglePanel} span="3 / 4">
               <IMUGraph
                 data={imuData}
                 width={335}
                 height={375}
               />
-            </div>
+            </Panel>
 
             {/* Sensor Timeline - spans full width */}
-            <div style={{ gridColumn: '1 / -1' }}>
+            <Panel id="timeline" title="Sensor Timeline" collapsed={!!collapsed.timeline} onToggle={togglePanel} span="1 / -1">
               <SensorTimeline
                 data={timelineData}
                 width={1016}
                 height={200}
               />
-            </div>
+            </Panel>
           </div>
 
           {/* Status bar */}
