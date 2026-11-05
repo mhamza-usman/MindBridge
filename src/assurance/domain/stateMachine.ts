@@ -1,13 +1,19 @@
-import { AssuranceState, NeSyMode, Validity, AssuranceResult } from './types';
+import { AssuranceState, NeSyMode, Validity, AssuranceResult, EvidenceSnapshot } from './types';
 
 export interface StateMachineConfig {
   escalationTimeMs: number;
   holdTimeMs: number;
+  /**
+   * How long a worsening candidate state must persist before it takes effect.
+   * Filters single-frame sensor dropouts. 0 = immediate (legacy behaviour).
+   */
+  confirmMs?: number;
 }
 
 export const defaultSMConfig: StateMachineConfig = {
   escalationTimeMs: 20000,
-  holdTimeMs: 10000
+  holdTimeMs: 10000,
+  confirmMs: 1000
 };
 
 export const NeSyFloorMap: Record<NeSyMode, AssuranceState | null> = {
@@ -30,15 +36,33 @@ export class AssuranceStateMachine {
   private currentState: AssuranceState = 'Autonomous';
   private violationStartTime: number | null = null;
   private recoveryStartTime: number | null = null;
+  private pendingWorsen: AssuranceState | null = null;
+  private pendingSince: number | null = null;
+  private lastT = -Infinity;
 
   constructor(private config: StateMachineConfig = defaultSMConfig) {}
 
+  /**
+   * @param t        timestamp in milliseconds (same unit as config times)
+   * @param evidence optional snapshot; used to detect the sensor startup frame
+   *                 (sentinel ages >= 9000 ms before sensors publish)
+   */
   public tick(
     t: number,
     contractStatus: Record<string, Validity>,
     fusionConflict: boolean,
-    nesyMode: NeSyMode
+    nesyMode: NeSyMode,
+    evidence?: EvidenceSnapshot
   ): AssuranceResult {
+    // Replay loops and source switches can move t backwards; restart timers.
+    if (t < this.lastT) {
+      this.violationStartTime = null;
+      this.recoveryStartTime = null;
+      this.pendingWorsen = null;
+      this.pendingSince = null;
+    }
+    this.lastT = t;
+
     let rawState: AssuranceState = 'Autonomous';
     let unknownReasons: string[] = [];
     let blockReasons: string[] = [];
@@ -52,12 +76,16 @@ export class AssuranceStateMachine {
       }
     }
 
-    // Special case: if all sensors have 9999.0 age (startup condition), treat as Autonomous
-    // This handles the initial frames before sensors have published data
-    const cameraAge = parseFloat(contractStatus['camera_age_ms']?.value || '0');
-    const lidarAge = parseFloat(contractStatus['lidar_age_ms']?.value || '0');
-    if (cameraAge >= 9000 && lidarAge >= 9000 && t < 1.0) {
-      // Startup phase - both sensors have no data yet, treat as Autonomous
+    // Startup grace: first frame(s) may carry sentinel ages (>= 9000 ms) before
+    // sensors publish. Treat contract checks as clean and skip the NeSyConf
+    // floor for that tick so the boot frame cannot latch a bad state.
+    let isStartup = false;
+    if (evidence && t < 1000) {
+      const cameraAge = parseFloat(evidence.items['camera_age_ms']?.value ?? '0');
+      const lidarAge = parseFloat(evidence.items['lidar_age_ms']?.value ?? '0');
+      isStartup = cameraAge >= 9000 && lidarAge >= 9000;
+    }
+    if (isStartup) {
       unknownReasons = [];
       degradedReasons = [];
     }
@@ -81,10 +109,33 @@ export class AssuranceStateMachine {
       this.violationStartTime = null;
     }
 
-    const floor = NeSyFloorMap[nesyMode];
+    const floor = isStartup ? null : NeSyFloorMap[nesyMode];
     if (floor && STATE_RANK[floor] > STATE_RANK[rawState]) {
       rawState = floor;
       blockReasons.push(`NeSyConf mode ${nesyMode} enforces ${floor} floor`);
+    }
+
+    // Confirmation window: a worsening candidate must persist confirmMs before
+    // the state actually changes. Single-frame dropouts never confirm.
+    const confirmMs = this.config.confirmMs ?? 0;
+    if (STATE_RANK[rawState] > STATE_RANK[this.currentState]) {
+      const persisted =
+        this.pendingWorsen === rawState &&
+        this.pendingSince !== null &&
+        t - this.pendingSince >= confirmMs;
+      if (persisted) {
+        this.pendingWorsen = null;
+        this.pendingSince = null;
+      } else {
+        if (this.pendingWorsen !== rawState || this.pendingSince === null || t < this.pendingSince) {
+          this.pendingWorsen = rawState;
+          this.pendingSince = t;
+        }
+        if (confirmMs > 0) rawState = this.currentState;
+      }
+    } else {
+      this.pendingWorsen = null;
+      this.pendingSince = null;
     }
 
     if (STATE_RANK[rawState] < STATE_RANK[this.currentState]) {

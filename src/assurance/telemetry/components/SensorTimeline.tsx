@@ -8,8 +8,6 @@ interface SensorTimelineData {
   lidar_age_ms: number;
   cam_rate: number;
   lidar_rate: number;
-  perception_pct: number;
-  uncertainty_pct: number;
 }
 
 interface SensorTimelineProps {

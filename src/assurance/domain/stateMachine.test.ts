@@ -5,12 +5,12 @@ function runTests() {
   console.log('Running stateMachine tests...');
 
   // Test 1: Precedence (Unknown > Degraded)
-  const sm1 = new AssuranceStateMachine();
+  const sm1 = new AssuranceStateMachine({ escalationTimeMs: 20000, holdTimeMs: 10000, confirmMs: 0 });
   let res = sm1.tick(0, { 'camera': 'unk', 'lidar': 'bad' }, false, 'Autonomous');
   assert.strictEqual(res.state, 'Unknown', 'Unknown should take precedence over Degraded');
 
   // Test 2: Precedence (Blocked floor > Unknown)
-  const sm2 = new AssuranceStateMachine();
+  const sm2 = new AssuranceStateMachine({ escalationTimeMs: 20000, holdTimeMs: 10000, confirmMs: 0 });
   res = sm2.tick(0, { 'camera': 'unk' }, false, 'Emergency');
   assert.strictEqual(res.state, 'Blocked', 'Emergency floor (Blocked) should take precedence over Unknown');
 
@@ -35,6 +35,17 @@ function runTests() {
   assert.strictEqual(res.state, 'Degraded', 'Should hold Degraded during recovery');
   res = sm4.tick(21000, {}, false, 'Autonomous');
   assert.strictEqual(res.state, 'Autonomous', 'Should step down ONE level to Autonomous after hold time');
+
+  // Test 5: Confirmation window filters single-frame dropouts (default confirmMs = 1000)
+  const sm5 = new AssuranceStateMachine();
+  res = sm5.tick(0, { 'lidar': 'bad' }, false, 'Autonomous');
+  assert.strictEqual(res.state, 'Autonomous', 'Single bad frame should not change state');
+  res = sm5.tick(100, {}, false, 'Autonomous');
+  assert.strictEqual(res.state, 'Autonomous', 'Blip cleared before confirm window');
+  res = sm5.tick(200, { 'lidar': 'bad' }, false, 'Autonomous');
+  assert.strictEqual(res.state, 'Autonomous', 'Second isolated bad frame still pending');
+  res = sm5.tick(1300, { 'lidar': 'bad' }, false, 'Autonomous');
+  assert.strictEqual(res.state, 'Degraded', 'Sustained violation past confirmMs should confirm');
 
   console.log('All stateMachine tests passed!');
 }

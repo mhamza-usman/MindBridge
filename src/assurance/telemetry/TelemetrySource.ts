@@ -1,5 +1,3 @@
-import { EvidenceSnapshot, EvidenceItem } from '../domain';
-
 export interface TelemetryData {
   t: number;
   source: string;

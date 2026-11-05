@@ -1,6 +1,7 @@
 "use client";
 import React, { useEffect, useState, useMemo } from "react";
 import "./AssuranceStyles.css";
+import { SyntheticSource } from "../sources/synthetic";
 import { ReplaySource, ReplaySourceOptions } from "../sources/replay";
 import { getDefaultContract } from "../contract/loader";
 import { evaluateContract } from "../contract/evaluator";
@@ -29,14 +30,15 @@ const ALL_MODES: NeSyMode[] = ['Autonomous', 'Monitoring', 'Advisory', 'Interven
 
 export default function AssuranceShell() {
   const [view, setView] = useState('live');
+  const [scenario, setScenario] = useState<'nominal'|'stale'|'conflict'|'unknown'>('nominal');
   const [evidence, setEvidence] = useState<EvidenceSnapshot | null>(null);
   const [logMsg, setLogMsg] = useState("");
   // Accumulate evidence snapshots for the monitoring panel
   const [evidenceHistory, setEvidenceHistory] = useState<EvidenceSnapshot[]>([]);
 
-  // Source type tracking - default to replay (no synthetic)
-  const [sourceType, setSourceType] = useState<'replay'|'telemetry'>('replay');
-  const [replayScenario, setReplayScenario] = useState<'r2b_nominal'|'r2b_stale'|'r2b_conflict'|'r2b_unknown'>('r2b_nominal');
+  // Source type tracking - default to replay (synthetic behind ?synthetic=1 flag)
+  const [sourceType, setSourceType] = useState<'synthetic'|'replay'|'telemetry'>('replay');
+  const [replayScenario, setReplayScenario] = useState<'r2b_nominal'|'r2b_stale'|'r2b_conflict'|'r2b_unknown' | null>('r2b_nominal');
 
   // Replay view state
   const [incidents, setIncidents] = useState<IncidentBundle[]>([]);
@@ -65,18 +67,24 @@ export default function AssuranceShell() {
     if (sourceType === 'replay' && replayScenario) {
       return new ReplaySource({ sseUrl: `/api/replay/${replayScenario}` });
     }
+    if (sourceType === 'synthetic') {
+      return new SyntheticSource();
+    }
     return new ReplaySource({ sseUrl: `/api/replay/r2b_nominal` });
   }, [sourceType, replayScenario]);
   const contract = useMemo(() => getDefaultContract(), []);
-  const sm = useMemo(() => new AssuranceStateMachine(), []);
+  const sm = useMemo(() => new AssuranceStateMachine(), [sourceType, replayScenario, scenario]);
   const recorder = useMemo(() => new IncidentRecorder(), []);
 
   useEffect(() => {
-    recorder.start(contract.mission, contract.version, sourceType);
+    recorder.start(contract.mission, contract.version, sourceType === 'telemetry' ? 'live' : sourceType);
     return () => recorder.stop();
   }, [recorder, contract, sourceType]);
 
   useEffect(() => {
+    if (sourceType === 'synthetic') {
+      (source as SyntheticSource).setScenario(scenario);
+    }
     // Reset history when source changes
     setEvidenceHistory([]);
     source.onSnapshot((s) => {
@@ -94,7 +102,7 @@ export default function AssuranceShell() {
     });
     source.start();
     return () => source.stop();
-  }, [sourceType, replayScenario]);
+  }, [source, scenario, sourceType]);
 
   // Derive NeSy mode: for replay use dataset's state field
   const nesyMode: NeSyMode = (() => {
@@ -108,7 +116,7 @@ export default function AssuranceShell() {
       if (camBad || percPct < 70) return 'Monitoring';
       return 'Autonomous';
     }
-    return 'Autonomous';
+    return scenario === 'stale' || scenario === 'conflict' ? 'Advisory' : scenario === 'unknown' ? 'Emergency' : 'Autonomous';
   })();
   let res = null;
   let checks = {};
@@ -123,7 +131,7 @@ export default function AssuranceShell() {
       evidence.items['sensors_agree']?.status === 'bad' ||
       evidence.items['glare_detected']?.value === 'true'
     );
-    const conflict = replayConflict;
+    const conflict = (sourceType === 'synthetic' && scenario === 'conflict') || replayConflict;
     if (conflict) {
       const mockFusionInput: FusionInput = {
         syncSkewMs: 10,
@@ -156,7 +164,9 @@ export default function AssuranceShell() {
     }
 
     checks = evaluateContract(contract, modifiedEvidence);
-    res = sm.tick(modifiedEvidence.t, checks, conflict, nesyMode);
+    // State machine config times are in ms; replay t is in seconds, synthetic t is Date.now() ms
+    const tickT = sourceType === 'replay' ? modifiedEvidence.t * 1000 : modifiedEvidence.t;
+    res = sm.tick(tickT, checks, conflict, nesyMode, modifiedEvidence);
   }
 
   // Record state changes
@@ -233,9 +243,8 @@ export default function AssuranceShell() {
           </>
         )}
         <span style={{fontSize:'11px', padding:'2px 8px', borderRadius:'99px', border:'1px solid var(--line)', background:'#fff', color:'var(--ink2)'}}>
-          {sourceType === 'replay' && replayScenario
-            ? `Replay: NVIDIA r2b 2023 - ${replayScenario.replace('r2b_', '')}`
-            : sourceType === 'telemetry' ? 'Live Telemetry'
+          {sourceType === 'replay'
+            ? `Replay: NVIDIA r2b 2023 - ${(replayScenario || 'r2b_nominal').replace('r2b_', '')}`
             : 'Synthetic demo data'}
         </span>
         {res && (
@@ -260,6 +269,20 @@ export default function AssuranceShell() {
               <ul className="v2-why" style={{'--c': STATE_COLORS[res.state]} as any}>
                 {res.why.length > 0 ? res.why.map((w,i) => <li key={i}>{w}</li>) : <li>All contract checks pass</li>}
               </ul>
+              {alerts.length > 0 && (
+                <>
+                  <h3 style={{fontSize:'12px', fontWeight:600, color:'var(--ink2)', margin:'10px 0 4px'}}>Active Alerts</h3>
+                  <div style={{display:'flex', flexDirection:'column', gap:'8px'}}>
+                    {alerts.slice(-3).map((alert, i) => (
+                      <div key={i} style={{padding:'8px', background:'rgba(196,22,42,0.06)', borderRadius:'6px', border:'1px solid rgba(196,22,42,0.2)', fontSize:'11px'}}>
+                        <div style={{fontWeight:600, color:'#c4162a'}}>{alert.ruleName}</div>
+                        <div style={{color:'var(--ink2)', marginTop:'2px'}}>{alert.description}</div>
+                        <div style={{color:'var(--ink2)'}}>Value: {evidence.items[alert.ruleId]?.value || 'no data'}</div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
               <div className="v2-btns">
                 <button className="v2-btn p" onClick={()=>logAction('Acknowledged')}>Acknowledge</button>
                 <button className="v2-btn" onClick={()=>logAction('Escalated to supervisor')}>Escalate</button>
@@ -272,9 +295,9 @@ export default function AssuranceShell() {
             <div className="v2-panel v2-c7">
               <h2>Floor map</h2>
               {(() => {
-                const isConflict = scenario === 'conflict' || (sourceType === 'replay' && (replayScenario === 'r2b_conflict' || evidence.items['glare_detected']?.value === 'true' || evidence.items['sensors_agree']?.status === 'bad'));
-                const isStale = scenario === 'stale' || (sourceType === 'replay' && (replayScenario === 'r2b_stale' || evidence.items['camera_age_ms']?.status === 'bad'));
-                const isUnknown = scenario === 'unknown' || (sourceType === 'replay' && (replayScenario === 'r2b_unknown' || res.state === 'Unknown'));
+                const isConflict = (sourceType === 'synthetic' && scenario === 'conflict') || (sourceType === 'replay' && (replayScenario === 'r2b_conflict' || evidence.items['glare_detected']?.value === 'true' || evidence.items['sensors_agree']?.status === 'bad'));
+                const isStale = (sourceType === 'synthetic' && scenario === 'stale') || (sourceType === 'replay' && (replayScenario === 'r2b_stale' || evidence.items['camera_age_ms']?.status === 'bad'));
+                const isUnknown = (sourceType === 'synthetic' && scenario === 'unknown') || (sourceType === 'replay' && (replayScenario === 'r2b_unknown' || res.state === 'Unknown'));
                 const showCone = !isUnknown && !isStale;
                 const showObst = isConflict;
                 // Animate robot X: use t from evidence (0..90s) or conflict_at_m to set position
@@ -566,8 +589,6 @@ export default function AssuranceShell() {
                   </button>
                   <button
                     className="v2-btn"
-                    style={{background: view === 'camera' ? 'var(--accent)' : undefined,
-                            color: view === 'camera' ? '#fff' : undefined}}
                     onClick={() => setView('camera')}
                   >
                     Camera Wall
@@ -576,8 +597,6 @@ export default function AssuranceShell() {
                 <div style={{marginTop:'12px', display:'flex', gap:'8px', flexWrap:'wrap', marginBottom:'12px'}}>
                   <button
                     className="v2-btn"
-                    style={{background: sourceType === 'telemetry' ? 'var(--accent)' : undefined,
-                            color: sourceType === 'telemetry' ? '#fff' : undefined}}
                     onClick={() => {
                       setSourceType('telemetry');
                     }}
@@ -648,7 +667,11 @@ export default function AssuranceShell() {
                   aggregator={fleetAggregator}
                   onSelectRobot={(id) => {
                     // Phase 7 spec: robot card click routes to Live view with that robot's evidence
-                    setScenario('conflict'); // RB-04 uses conflict scenario data
+                    if (syntheticEnabled) {
+                      setSourceType('synthetic');
+                      setReplayScenario(null);
+                      setScenario('conflict'); // RB-04 uses conflict scenario data
+                    }
                     setView('live');
                   }}
                 />

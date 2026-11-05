@@ -4,7 +4,7 @@ import { EvidenceSnapshot } from "../domain/types";
 
 interface MonitoringPanelProps {
   history: EvidenceSnapshot[];
-  sourceType: 'synthetic' | 'replay';
+  sourceType: 'synthetic' | 'replay' | 'telemetry';
   replayScenario: string | null;
 }
 

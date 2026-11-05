@@ -33,7 +33,6 @@ export default function TelemetryLayout({ sseUrl, onBack }: TelemetryLayoutProps
     };
   }, [sseUrl, buffer]);
 
-  const latestCamera = useMemo(() => buffer.getLatestCameraData(), [telemetryData]);
   const cameraTopics = useMemo(() => buffer.getAllCameraTopics(), [telemetryData]);
   const latestLidar = useMemo(() => buffer.getLatestLidarData(), [telemetryData]);
   const imuData = useMemo(() => buffer.getIMUData(), [telemetryData]);
@@ -81,10 +80,9 @@ export default function TelemetryLayout({ sseUrl, onBack }: TelemetryLayoutProps
           {/* Engineering grid layout */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
             {/* Camera Feeds - show all 3 cameras */}
-            {cameraTopics.map((topic, idx) => {
-              const camData = typeof latestCamera === 'object' && latestCamera[topic] 
-                ? latestCamera[topic] 
-                : { width: 0, height: 0, has_image: false };
+            {cameraTopics.map((topic) => {
+              const camData = buffer.getLatestCameraDataForTopic(topic)
+                || { width: 0, height: 0, has_image: false };
               return (
                 <div key={topic}>
                   <CameraView
