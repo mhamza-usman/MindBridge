@@ -153,7 +153,7 @@ export function MonitoringPanel({ history, sourceType, replayScenario }: Monitor
   return (
     <div style={{ padding: '0' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-        <h2 style={{ margin: 0, fontSize: '14px', fontWeight: 650 }}>Live monitoring feed</h2>
+        <h2 style={{ margin: 0, fontSize: '14px', fontWeight: 650 }}>Monitoring feed</h2>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           <span style={{
             fontSize: '10px', padding: '2px 8px', borderRadius: '99px',

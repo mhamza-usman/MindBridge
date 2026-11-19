@@ -8,6 +8,7 @@ export interface ContractDef {
     max?: number;
     min?: number;
     equals?: boolean | string | number;
+    inDataset?: boolean;
   }>;
 }
 
@@ -22,6 +23,7 @@ export function buildAssumption(id: string, def: any): Assumption {
     id,
     label: def.label || id,
     limit: limitStr,
+    inDataset: def.inDataset !== false,
     check: (e: EvidenceSnapshot): Validity => {
       const item = e.items[id];
       if (!item) return 'unk';
@@ -63,10 +65,12 @@ export const defaultContractDef: ContractDef = {
   assumptions: {
     camera_age_ms: { label: 'Camera freshness', max: 200 },
     lidar_age_ms: { label: 'LiDAR freshness', max: 200 },
-    tf_age_ms: { label: 'TF age', max: 500 },
-    localization_std_m: { label: 'Localization std dev', max: 0.05 },
-    battery_reserve_pct: { label: 'Battery reserve', min: 20 },
-    calibration_valid: { label: 'Calibration valid', equals: true },
+    // Dataset contains /tf_static only — no continuous TF stream, so TF age is
+    // reported as evidence but not gated by the contract.
+    tf_age_ms: { label: 'TF age', max: 500, inDataset: false },
+    localization_std_m: { label: 'Localization std dev', max: 0.05, inDataset: false },
+    battery_reserve_pct: { label: 'Battery reserve', min: 20, inDataset: false },
+    calibration_valid: { label: 'Calibration valid', equals: true, inDataset: false },
     sensors_agree: { label: 'Camera and LiDAR agree', equals: true }
   }
 };

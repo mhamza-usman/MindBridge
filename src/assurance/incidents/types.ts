@@ -10,7 +10,8 @@ export interface IncidentBundle {
   started_at: string;
   ended_at?: string;
   contract_version: string;
-  model: { nesy_iv: string; calibration_set: string; coverage_target: number };
+  /** Only recorded when the runtime actually knows these values; absent otherwise. */
+  model?: { nesy_iv?: string; calibration_set?: string; coverage_target?: number };
   known: string[];
   unknown: string[];
   violated: string[];

@@ -22,14 +22,20 @@ from rosbags.typesys import Stores, get_typestore
 from PIL import Image as PILImage
 import io
 
-# Topic candidates - all cameras from r2b dataset (RGB only for simplicity)
+# Topic candidates - all image topics from r2b dataset
 CAMERA_TOPIC_CANDIDATES  = [
     "hawk_0_left_rgb_image",
     "hawk_0_right_rgb_image",
     "d455_1_rgb_image",
+    "d455_1_depth_image",
+    "d455_1_left_ir_image",
+    "d455_1_right_ir_image",
     "/hawk_0_left_rgb_image",
     "/hawk_0_right_rgb_image",
     "/d455_1_rgb_image",
+    "/d455_1_depth_image",
+    "/d455_1_left_ir_image",
+    "/d455_1_right_ir_image",
     "/camera/image_raw",
     "/rgb/image_raw",
 ]
@@ -46,6 +52,65 @@ MAX_IMAGE_SIZE = 240
 
 def pick_topic(candidates: list, present: set) -> str | None:
     return next((t for t in candidates if t in present), None)
+
+
+def decode_image(data, height: int, width: int, encoding: str):
+    """Decode a ROS Image/CompressedImage payload to an RGB uint8 array.
+
+    Returns None for encodings we cannot handle honestly.
+    """
+    buf = np.frombuffer(data, dtype=np.uint8)
+    enc = encoding.lower()
+
+    if enc in ('8uc3', 'rgb8', 'bgr8'):
+        arr = buf.reshape((height, width, 3)).copy()
+        if enc == 'bgr8':
+            arr = arr[:, :, ::-1]
+        return arr
+    if enc in ('8uc4', 'rgba8', 'bgra8'):
+        arr = buf.reshape((height, width, 4)).copy()
+        if enc == 'bgra8':
+            arr = arr[:, :, 2::-1]
+        return arr[:, :, :3]
+    if enc in ('8uc1', 'mono8'):
+        gray = buf.reshape((height, width))
+        return np.stack([gray] * 3, axis=-1)
+    if enc == '16uc1':
+        # Depth: percentile-normalize to 8-bit grayscale for display.
+        depth = np.frombuffer(data, dtype=np.uint16).reshape((height, width))
+        lo, hi = np.percentile(depth, [2, 98])
+        norm = np.clip((depth.astype(np.float32) - lo) / max(hi - lo, 1e-6), 0, 1)
+        gray = (norm * 255).astype(np.uint8)
+        return np.stack([gray] * 3, axis=-1)
+    if enc == '32fc1':
+        # Depth in meters (float32). Invalid readings are 0 or NaN; clamp to
+        # a plausible range and normalize for display only.
+        depth = np.frombuffer(data, dtype=np.float32).reshape((height, width))
+        valid = np.isfinite(depth) & (depth > 0.05) & (depth < 20.0)
+        if not valid.any():
+            return None
+        d = np.where(valid, depth, np.nan)
+        lo, hi = np.nanpercentile(d, [2, 98])
+        norm = np.clip((d - lo) / max(hi - lo, 1e-6), 0, 1)
+        norm[~valid] = 0
+        gray = (norm * 255).astype(np.uint8)
+        return np.stack([gray] * 3, axis=-1)
+    # Unknown encoding: try 3-channel uint8 as a last resort only when size matches.
+    if buf.size == height * width * 3:
+        return buf.reshape((height, width, 3)).copy()
+    return None
+
+
+def laplacian_variance(img_array) -> float:
+    """Variance of the Laplacian of the grayscale image (real sharpness metric)."""
+    gray = img_array.astype(np.float32).mean(axis=2)
+    # 3x3 Laplacian via shifted sums (no scipy dependency)
+    lap = (
+        -4 * gray[1:-1, 1:-1]
+        + gray[:-2, 1:-1] + gray[2:, 1:-1]
+        + gray[1:-1, :-2] + gray[1:-1, 2:]
+    )
+    return float(np.var(lap))
 
 
 def collect_sensor_data(bag_path: str):
@@ -96,13 +161,21 @@ def collect_sensor_data(bag_path: str):
                 msg = reader.deserialize(rawdata, connection.msgtype)
                 t = timestamp / 1_000_000_000.0
 
-                # Downsample image
+                # Decode image according to msg.encoding, then downsample.
                 try:
                     if hasattr(msg, 'data') and msg.data is not None and len(msg.data) > 0:
-                        img_array = np.frombuffer(msg.data, dtype=np.uint8).reshape((msg.height, msg.width, 3))
-                        h, w = img_array.shape[:2]
-                        scale = MAX_IMAGE_SIZE / max(h, w)
-                        new_h, new_w = int(h * scale), int(w * scale)
+                        enc = getattr(msg, 'encoding', '') or ''
+                        h, w = int(msg.height), int(msg.width)
+                        img_array = decode_image(msg.data, h, w, enc)
+                        if img_array is None:
+                            raise ValueError(f"unsupported encoding {enc!r}")
+
+                        # DERIVED: sharpness = variance of the Laplacian on the
+                        # downsampled grayscale frame (real measurement).
+                        sharpness = round(laplacian_variance(img_array), 2)
+
+                        scale = MAX_IMAGE_SIZE / max(img_array.shape[:2])
+                        new_h, new_w = int(img_array.shape[0] * scale), int(img_array.shape[1] * scale)
                         img_resized = np.array(PILImage.fromarray(img_array).resize((new_w, new_h)))
 
                         buffered = io.BytesIO()
@@ -115,7 +188,9 @@ def collect_sensor_data(bag_path: str):
                             'height': new_h,
                             'has_image': True,
                             'original_width': msg.width,
-                            'original_height': msg.height
+                            'original_height': msg.height,
+                            'encoding': enc,
+                            'sharpness': sharpness
                         }))
                     else:
                         cam_data[cam_topic].append((t, {
@@ -159,11 +234,14 @@ def collect_sensor_data(bag_path: str):
                         return None
 
                     has_xyz = all(k in field_map for k in ('x', 'y', 'z'))
+                    has_intensity = 'intensity' in field_map
                     points = []
+                    intensities = []
                     if has_xyz:
                         ox, dx = field_map['x']
                         oy, dy = field_map['y']
                         oz, dz = field_map['z']
+                        oi, di = field_map.get('intensity', (None, None))
                         max_read = min(num_points, 400)  # subsample for bandwidth
                         stride = max(1, num_points // max_read)
                         for i in range(0, num_points, stride):
@@ -174,20 +252,30 @@ def collect_sensor_data(bag_path: str):
                             if x is None or y is None or z is None:
                                 continue
                             if -50 < x < 50 and -50 < y < 50 and -50 < z < 50:
-                                points.append({
+                                point = {
                                     'x': round(x, 2),
                                     'y': round(y, 2),
                                     'z': round(z, 2)
-                                })
+                                }
+                                if oi is not None:
+                                    inten = read_scalar(msg.data, offset + oi, di)
+                                    if inten is not None:
+                                        point['i'] = round(inten, 3)
+                                        intensities.append(inten)
+                                points.append(point)
                     else:
                         print(f"Warning: PointCloud2 fields {list(field_map)} lack x/y/z; skipping frame at t={t}")
 
-                    lidar_data.append((t, {
+                    lidar_payload = {
                         'points': points,
                         'num_points': len(points),
                         'has_lidar': len(points) > 0,
                         'point_count': num_points
-                    }))
+                    }
+                    # DERIVED: mean intensity of returned points (real measurement).
+                    if intensities:
+                        lidar_payload['mean_intensity'] = round(float(np.mean(intensities)), 3)
+                    lidar_data.append((t, lidar_payload))
                 except Exception as e:
                     print(f"Warning: Could not process LiDAR at t={t}: {e}")
                     lidar_data.append((t, {
@@ -305,7 +393,7 @@ def generate(bag_path: str, args):
 
         event = {
             't': round(t, 2),
-            'source': 'r2b_live_telemetry',
+            'source': 'r2b_replay_telemetry',
             'cam_age_ms': round(cam_age, 1),
             'lidar_age_ms': round(lidar_age, 1),
             'cameras': cameras if include_image else None,

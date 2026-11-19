@@ -70,21 +70,22 @@ export class TelemetryBuffer {
   }
 
   getLatestCameraDataForTopic(topic: string) {
-    if (this.buffer.length === 0) return null;
-    const latest = this.buffer[this.buffer.length - 1];
-    if (latest.cameras && latest.cameras[topic]) {
-      return latest.cameras[topic];
+    // Scan backwards: image payloads only arrive ~1 Hz, so the newest frame
+    // rarely carries them. Return the most recent frame that has this topic.
+    for (let i = this.buffer.length - 1; i >= 0; i--) {
+      const cams = this.buffer[i].cameras;
+      if (cams && cams[topic]) return cams[topic];
     }
     return null;
   }
 
   getAllCameraTopics() {
-    if (this.buffer.length === 0) return [];
-    const latest = this.buffer[this.buffer.length - 1];
-    if (latest.cameras) {
-      return Object.keys(latest.cameras);
+    // Union of topics seen anywhere in the window (image frames are sparse).
+    const topics = new Set<string>();
+    for (const d of this.buffer) {
+      if (d.cameras) for (const k of Object.keys(d.cameras)) topics.add(k);
     }
-    return [];
+    return Array.from(topics);
   }
 
   getLatestLidarData() {

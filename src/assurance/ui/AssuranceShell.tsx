@@ -1,24 +1,27 @@
 "use client";
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
 import "./AssuranceStyles.css";
 import { SyntheticSource } from "../sources/synthetic";
 import { ReplaySource, ReplaySourceOptions } from "../sources/replay";
 import { getDefaultContract } from "../contract/loader";
 import { evaluateContract } from "../contract/evaluator";
 import { AssuranceStateMachine } from "../domain/stateMachine";
-import { EvidenceSnapshot, AssuranceState, NeSyMode } from "../domain/types";
+import { EvidenceSnapshot, AssuranceState, NeSyMode, ContractCheckResult } from "../domain/types";
+import { DiagnosisReport } from "../fusion/detector";
 import { IncidentRecorder } from "../incidents/recorder";
 import { IncidentStore } from "../incidents/store";
 import { IncidentBundle } from "../incidents/types";
-import { evaluateFusion, FusionInput } from "../fusion/detector";
+import { evaluateFusion } from "../fusion/detector";
+import { buildFusionInput, FusionMetrics } from "../fusion/inputBuilder";
+import { FusionMetricsBuffer } from "../fusion/telemetryMetrics";
+import { TelemetrySource } from "../telemetry/TelemetrySource";
 import { FleetView } from "./fleet/FleetView";
-import { createSyntheticFleet } from "../fleet/syntheticFleet";
+import { createReplayFleet, REPLAY_ROBOT_ID } from "../fleet/replayFleet";
 import { ReplayScrubber } from "./ReplayScrubber";
 import { MonitoringPanel } from "./MonitoringPanel";
 import TelemetryLayout from "../telemetry/ui/TelemetryLayout";
-import DatasetImporter from "./DatasetImporter";
 import CameraWall from "./CameraWall";
-import { checkAlerts, Alert } from "../alerts/AlertRule";
+import { checkAlerts, Alert, ALERT_TO_ASSUMPTION } from "../alerts/AlertRule";
 import { InterfaceSwitch } from "@/components/InterfaceSwitch";
 
 const STATE_COLORS: Record<AssuranceState, string> = {
@@ -59,10 +62,22 @@ export default function AssuranceShell() {
         || process.env.NEXT_PUBLIC_SYNTHETIC === 'true'
       : process.env.NEXT_PUBLIC_SYNTHETIC === 'true';
 
+  // Fleet aggregator backed by the single real robot in the r2b dataset.
   const fleetAggregator = useMemo(
-    () => fleetEnabled ? createSyntheticFleet() : null,
+    () => fleetEnabled ? createReplayFleet() : null,
     [fleetEnabled]
   );
+
+  // Fusion metrics measured from the real telemetry stream (sharpness,
+  // LiDAR intensity). Null fields = not enough data yet.
+  const [fusionMetrics, setFusionMetrics] = useState<FusionMetrics>({
+    sharpnessLow: null, blurTrendUp: null, intensityDropped: null, calibrationStale: null
+  });
+  const metricsBufferRef = useRef<FusionMetricsBuffer | null>(null);
+  const [disagreeStreak, setDisagreeStreak] = useState(0);
+  const disagreeStreakRef = useRef(0);
+  const lastEvidenceTRef = useRef(-Infinity);
+  const [alertFocus, setAlertFocus] = useState<string | null>(null);
 
   const source = useMemo(() => {
     if (sourceType === 'replay' && replayScenario) {
@@ -105,6 +120,36 @@ export default function AssuranceShell() {
     return () => source.stop();
   }, [source, scenario, sourceType]);
 
+  // Measure fusion inputs from the real telemetry stream (same r2b bag).
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const buf = new FusionMetricsBuffer();
+    metricsBufferRef.current = buf;
+    const ts = new TelemetrySource({ sseUrl: '/api/telemetry/r2b_telemetry' });
+    let frameCount = 0;
+    ts.onSnapshot((d) => {
+      buf.push(d);
+      frameCount += 1;
+      // Update React state ~2x/sec; metrics are DERIVED from real frames.
+      if (frameCount % 5 === 0) setFusionMetrics(buf.metrics());
+    });
+    ts.start();
+    return () => { ts.stop(); metricsBufferRef.current = null; };
+  }, []);
+
+  // Track consecutive frames of camera/LiDAR disagreement for fusion persistence.
+  useEffect(() => {
+    if (!evidence) return;
+    // Replay loops: reset streak when t moves backwards.
+    if (evidence.t < lastEvidenceTRef.current) disagreeStreakRef.current = 0;
+    lastEvidenceTRef.current = evidence.t;
+    const disagree =
+      evidence.items['sensors_agree']?.status === 'bad' ||
+      evidence.items['glare_detected']?.value === 'true';
+    disagreeStreakRef.current = disagree ? disagreeStreakRef.current + 1 : 0;
+    setDisagreeStreak(disagreeStreakRef.current);
+  }, [evidence]);
+
   // Derive NeSy mode: for replay use dataset's state field
   const nesyMode: NeSyMode = (() => {
     if (sourceType === 'replay' && evidence) {
@@ -119,50 +164,18 @@ export default function AssuranceShell() {
     }
     return scenario === 'stale' || scenario === 'conflict' ? 'Advisory' : scenario === 'unknown' ? 'Emergency' : 'Autonomous';
   })();
-  let res = null;
-  let checks = {};
-  let fusionReport = null;
+  let res: import("../domain/types").AssuranceResult | null = null;
+  let checks: Record<string, ContractCheckResult> = {};
+  let fusionReport: DiagnosisReport | null = null;
 
   if (evidence) {
-    let modifiedEvidence = { ...evidence };
+    const modifiedEvidence = evidence;
 
-    // Inject fusion result into evidence
-    // For replay: detect conflict from dataset fields
-    const replayConflict = sourceType === 'replay' && (
-      evidence.items['sensors_agree']?.status === 'bad' ||
-      evidence.items['glare_detected']?.value === 'true'
-    );
-    const conflict = (sourceType === 'synthetic' && scenario === 'conflict') || replayConflict;
-    if (conflict) {
-      const mockFusionInput: FusionInput = {
-        syncSkewMs: 10,
-        persistenceCount: 5,
-        cameraSeesObject: true,
-        lidarSeesObject: false,
-        exposureSaturated: true,
-        brightPatchOverlaps: true,
-        floorIsPolished: true,
-        objectAbsentEarlier: true,
-        imageSharpnessLow: false,
-        lidarIntensityDropped: false,
-        blurIncreasing: false,
-        calibrationOld: false,
-        sameOffsetOtherObjects: false,
-        recentBump: false,
-        objectPresentEarlier: false,
-        shapeMatchesKnown: false,
-        heightBelowLidar: false
-      };
-      fusionReport = evaluateFusion(mockFusionInput);
-      modifiedEvidence.items['sensors_agree'] = {
-        id: 'sensors_agree',
-        label: 'Sensors agree',
-        value: fusionReport.unresolved ? 'Unresolved conflict' : fusionReport.rankedCauses[0]?.name || 'Conflict detected',
-        status: fusionReport.unresolved ? 'unk' : 'bad',
-        source: 'synthetic',
-        t: evidence.t
-      };
-    }
+    // Real fusion input: disagreement signal from evidence, cause checks from
+    // measured telemetry (sharpness, LiDAR intensity) and calibration file.
+    const fusionInput = buildFusionInput(modifiedEvidence, disagreeStreak, fusionMetrics);
+    fusionReport = evaluateFusion(fusionInput);
+    const conflict = fusionInput.sensorsDisagree && disagreeStreak >= 5;
 
     checks = evaluateContract(contract, modifiedEvidence);
     // State machine config times are in ms; replay t is in seconds, synthetic t is Date.now() ms
@@ -170,10 +183,21 @@ export default function AssuranceShell() {
     res = sm.tick(tickT, checks, conflict, nesyMode, modifiedEvidence);
   }
 
+  // Feed the single real robot's state into the fleet aggregator (throttled).
+  const lastFleetPushRef = useRef(0);
+  useEffect(() => {
+    if (!fleetAggregator || !res || !evidence) return;
+    const now = Date.now();
+    if (res.state !== fleetAggregator.getSnapshot().robots[0]?.state || now - lastFleetPushRef.current > 1000) {
+      lastFleetPushRef.current = now;
+      fleetAggregator.updateRobotState(REPLAY_ROBOT_ID, res.state, evidence, 'Not in dataset');
+    }
+  }, [fleetAggregator, res?.state, evidence]);
+
   // Record state changes
   useEffect(() => {
     if (res && evidence) {
-      recorder.recordState(res.state, res.why, res.recommendation, res.known, res.unknown, res.violated);
+      recorder.recordState(res.state, res.why, res.recommendation, res.known, res.unknown, res.violated, evidence);
     }
   }, [res?.state, res?.why.join(','), recorder, evidence]); // trigger when state or why changes
 
@@ -226,7 +250,7 @@ export default function AssuranceShell() {
       <div className="v2-wall" />
       <header className="v2-menubar">
         <b>MindBridge</b>
-        <span>Robot RB-07, warehouse aisle B pickup</span>
+        <span>Robot r2b-01 — NVIDIA r2b datacenter replay</span>
         <span style={{flex:1}} />
         {syntheticEnabled && (
           <>
@@ -275,19 +299,30 @@ export default function AssuranceShell() {
                 <>
                   <h3 style={{fontSize:'12px', fontWeight:600, color:'var(--ink2)', margin:'10px 0 4px'}}>Active Alerts</h3>
                   <div style={{display:'flex', flexDirection:'column', gap:'8px'}}>
-                    {alerts.slice(-3).map((alert, i) => (
-                      <div key={i} style={{padding:'8px', background:'rgba(196,22,42,0.06)', borderRadius:'6px', border:'1px solid rgba(196,22,42,0.2)', fontSize:'11px'}}>
-                        <div style={{fontWeight:600, color:'#c4162a'}}>{alert.ruleName}</div>
-                        <div style={{color:'var(--ink2)', marginTop:'2px'}}>{alert.description}</div>
-                        <div style={{color:'var(--ink2)'}}>Value: {evidence.items[alert.ruleId]?.value || 'no data'}</div>
-                      </div>
-                    ))}
+                    {alerts.slice(-3).map((alert, i) => {
+                      const target = ALERT_TO_ASSUMPTION[alert.ruleId];
+                      return (
+                        <div key={i}
+                          onClick={() => {
+                            if (target) { setAlertFocus(target); setView('contract'); }
+                            else setView('live');
+                          }}
+                          style={{padding:'8px', background:'rgba(196,22,42,0.06)', borderRadius:'6px', border:'1px solid rgba(196,22,42,0.2)', fontSize:'11px', cursor:'pointer'}}
+                          title={target ? 'Click to see the failing contract check' : 'Click to view live evidence'}
+                        >
+                          <div style={{fontWeight:600, color:'#c4162a'}}>{alert.ruleName} →</div>
+                          <div style={{color:'var(--ink2)', marginTop:'2px'}}>{alert.description}</div>
+                          <div style={{color:'var(--ink2)'}}>Value: {evidence.items[alert.ruleId]?.value || 'no data'}</div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </>
               )}
               <div className="v2-btns">
                 <button className="v2-btn p" onClick={()=>logAction('Acknowledged')}>Acknowledge</button>
                 <button className="v2-btn" onClick={()=>logAction('Escalated to supervisor')}>Escalate</button>
+                <button className="v2-btn" onClick={()=>logAction('Override logged')}>Override</button>
                 <button className="v2-btn" onClick={()=>logAction('Operator decision logged')}>Log my decision</button>
                 <button className="v2-btn" onClick={()=>logAction('Incident saved')}>Save incident</button>
               </div>
@@ -296,87 +331,23 @@ export default function AssuranceShell() {
 
             <div className="v2-panel v2-c7">
               <h2>Floor map</h2>
-              {(() => {
-                const isConflict = (sourceType === 'synthetic' && scenario === 'conflict') || (sourceType === 'replay' && (replayScenario === 'r2b_conflict' || evidence.items['glare_detected']?.value === 'true' || evidence.items['sensors_agree']?.status === 'bad'));
-                const isStale = (sourceType === 'synthetic' && scenario === 'stale') || (sourceType === 'replay' && (replayScenario === 'r2b_stale' || evidence.items['camera_age_ms']?.status === 'bad'));
-                const isUnknown = (sourceType === 'synthetic' && scenario === 'unknown') || (sourceType === 'replay' && (replayScenario === 'r2b_unknown' || res.state === 'Unknown'));
-                const showCone = !isUnknown && !isStale;
-                const showObst = isConflict;
-                // Animate robot X: use t from evidence (0..90s) or conflict_at_m to set position
-                const conflictAtM = parseFloat(evidence.items['uncertainty_pct'] ? '0' : '0');
-                const progress = sourceType === 'replay'
-                  ? Math.min(1, (evidence.t ?? 0) / 90)
-                  : (scenario === 'conflict' ? 0.42 : scenario === 'stale' ? 0.25 : scenario === 'unknown' ? 0.05 : 0.1);
-                const robotX = 70 + progress * 220; // 70..290 px along aisle
-                const conflictX = isConflict ? Math.min(robotX + 40, 290) : 228;
-                const mapNote = isConflict
-                  ? `Conflict detected near position ${(progress * 5).toFixed(1)} m. Polished floor zone.`
-                  : isStale
-                  ? 'Camera coverage is stale. LiDAR still fresh.'
-                  : isUnknown
-                  ? 'No valid sensor coverage.'
-                  : `Sensors agree. Robot at ${(progress * 5).toFixed(1)} m. Path clear to Bin 42.`;
-
-                return (
-                  <div>
-                    <svg viewBox="0 0 420 220" width="100%" role="img" aria-label="Floor map with robot, goal and sensor coverage" style={{display:'block'}}>
-                      <rect x="6" y="6" width="408" height="208" rx="10" fill="#fff" stroke="rgba(20,30,50,.12)"/>
-                      <g fill="#e8edf7">
-                        <rect x="30" y="30" width="150" height="34" rx="6"/>
-                        <rect x="30" y="156" width="150" height="34" rx="6"/>
-                        <rect x="230" y="30" width="150" height="34" rx="6"/>
-                        <rect x="230" y="156" width="150" height="34" rx="6"/>
-                      </g>
-                      <text x="34" y="26" fontSize="11" fill="var(--ink2)" fontFamily="var(--font)">Rack A</text>
-                      <text x="234" y="26" fontSize="11" fill="var(--ink2)" fontFamily="var(--font)">Rack B</text>
-
-                      {isConflict && (
-                        <g>
-                          <rect x="196" y="84" width="60" height="52" rx="8" fill="#fff4d6" stroke="#e5c56b" strokeDasharray="4 3"/>
-                          <text x="200" y="146" fontSize="10" fill="#a15c00" fontFamily="var(--font)">Polished floor</text>
-                        </g>
-                      )}
-
-                      <path d="M60 110 H330" stroke="#0a66ff" strokeWidth="2" strokeDasharray="5 4" fill="none" opacity="0.6"/>
-
-                      {showCone && (
-                        <polygon points="120,110 190,80 190,140" fill="rgba(10,102,255,.14)" stroke="#0a66ff" strokeDasharray="3 3"/>
-                      )}
-
-                      {showObst && (
-                        <g>
-                          <circle cx={conflictX} cy="108" r="8" fill="none" stroke="#c4162a" strokeWidth="2" strokeDasharray="3 2"/>
-                          <text x={conflictX - 14} y="96" fontSize="10" fill="#c4162a" fontFamily="var(--font)">Camera: object</text>
-                          <text x={conflictX - 14} y="128" fontSize="10" fill="#1e8e4e" fontFamily="var(--font)">LiDAR: clear</text>
-                        </g>
-                      )}
-
-                      {/* Robot dot — animated along the aisle */}
-                      <circle cx={robotX} cy="110" r="9" fill={isUnknown ? 'var(--unk)' : isConflict ? 'var(--blk)' : isStale ? 'var(--deg)' : '#0a66ff'} style={{transition:'cx .5s ease'}} />
-                      {/* Velocity trail */}
-                      {[1,2,3].map(k => (
-                        <circle key={k} cx={robotX - k*12} cy="110" r={9 - k*2.5}
-                          fill={isUnknown ? 'var(--unk)' : isConflict ? 'var(--blk)' : isStale ? 'var(--deg)' : '#0a66ff'}
-                          opacity={0.15 / k} style={{transition:'cx .5s ease'}}
-                        />
-                      ))}
-                      <text x={robotX - 14} y="134" fontSize="11" fontWeight="600" fill="var(--ink)" fontFamily="var(--font)">RB-07</text>
-
-                      <circle cx="332" cy="110" r="7" fill="#1e8e4e"/>
-                      <text x="318" y="98" fontSize="11" fill="var(--ink2)" fontFamily="var(--font)">Bin 42</text>
-                    </svg>
-                    <div style={{fontSize:'12px', color:'var(--ink2)', marginTop:'8px'}}>{mapNote}</div>
-                  </div>
-                );
-              })()}
+              <div style={{display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', minHeight:'180px', gap:'8px'}}>
+                <span style={{fontSize:'28px'}} aria-hidden="true">🗺️</span>
+                <p style={{fontSize:'13px', color:'var(--ink2)', textAlign:'center', margin:0}}>
+                  No pose or map in dataset
+                </p>
+                <p style={{fontSize:'11px', color:'var(--ink2)', textAlign:'center', margin:0}}>
+                  The r2b bag contains no odometry, SLAM pose, or map topics, so robot position cannot be shown.
+                </p>
+              </div>
             </div>
 
             <div className="v2-panel v2-c6">
               <h2>Evidence</h2>
               <div>
                 {Object.values(evidence.items).map(ev => (
-                  <div key={ev.id} className="v2-row">
-                    <span className="n">{ev.label}</span>
+                  <div key={ev.id} className="v2-row" title={ev.derived ? `DERIVED: ${ev.derived}` : undefined}>
+                    <span className="n">{ev.label}{ev.derived ? ' · DERIVED' : ''}</span>
                     <span className="v">{ev.value}</span>
                     <span className={`v2-st ${ev.status}`}>{ev.status === 'ok' ? 'Within limit' : ev.status === 'warn' ? 'Watch' : ev.status === 'bad' ? 'Violated' : 'No data'}</span>
                   </div>
@@ -387,32 +358,37 @@ export default function AssuranceShell() {
             <div className="v2-panel v2-c6">
               <h2>NeSyConf (existing engine)</h2>
               {(() => {
-                // Wire gauges directly from evidence — works for both synthetic and replay
-                const percVal = evidence.items['perception_pct']?.value
-                  ? Math.min(100, Math.max(0, Math.round(parseFloat(evidence.items['perception_pct'].value))))
-                  : 92;
-                const uncVal = evidence.items['uncertainty_pct']?.value
-                  ? Math.min(100, Math.max(0, Math.round(parseFloat(evidence.items['uncertainty_pct'].value))))
-                  : 8;
-                // Plan certainty: derived from perception and uncertainty together
-                const planVal = Math.max(0, Math.round(percVal * 0.6 + (100 - uncVal) * 0.4));
+                // Only show gauges for values actually present in the evidence.
+                // perception_pct / uncertainty_pct are DERIVED (formula on hover
+                // in the Evidence panel). Plan certainty is not in the dataset.
+                const percItem = evidence.items['perception_pct'];
+                const uncItem = evidence.items['uncertainty_pct'];
+                const percVal = percItem ? Math.min(100, Math.max(0, Math.round(parseFloat(percItem.value)))) : null;
+                const uncVal = uncItem ? Math.min(100, Math.max(0, Math.round(parseFloat(uncItem.value)))) : null;
 
                 return (
                   <div>
                     <div className="v2-row">
-                       <span className="n" style={{flex:'none', width:'130px'}}>Perception</span>
-                       <div className="v2-bar"><span style={{width:`${percVal}%`, background: percVal < 70 ? 'var(--deg)' : 'var(--accent)'}}></span></div>
-                       <span className="v" style={{width:'40px', textAlign:'right'}}>{percVal}%</span>
+                       <span className="n" style={{flex:'none', width:'130px'}}>Perception{percItem?.derived ? ' · DERIVED' : ''}</span>
+                       {percVal !== null ? (
+                         <>
+                           <div className="v2-bar"><span style={{width:`${percVal}%`, background: percVal < 70 ? 'var(--deg)' : 'var(--accent)'}}></span></div>
+                           <span className="v" style={{width:'40px', textAlign:'right'}}>{percVal}%</span>
+                         </>
+                       ) : <span className="v">Not in dataset</span>}
                     </div>
                     <div className="v2-row">
                        <span className="n" style={{flex:'none', width:'130px'}}>Plan certainty</span>
-                       <div className="v2-bar"><span style={{width:`${planVal}%`, background: planVal < 60 ? 'var(--deg)' : 'var(--accent)'}}></span></div>
-                       <span className="v" style={{width:'40px', textAlign:'right'}}>{planVal}%</span>
+                       <span className="v">Not in dataset</span>
                     </div>
                     <div className="v2-row">
-                       <span className="n" style={{flex:'none', width:'130px'}}>System uncertainty</span>
-                       <div className="v2-bar"><span style={{width:`${uncVal}%`, background: uncVal > 30 ? 'var(--blk)' : 'var(--sup)'}}></span></div>
-                       <span className="v" style={{width:'40px', textAlign:'right'}}>{uncVal}%</span>
+                       <span className="n" style={{flex:'none', width:'130px'}}>System uncertainty{uncItem?.derived ? ' · DERIVED' : ''}</span>
+                       {uncVal !== null ? (
+                         <>
+                           <div className="v2-bar"><span style={{width:`${uncVal}%`, background: uncVal > 30 ? 'var(--blk)' : 'var(--sup)'}}></span></div>
+                           <span className="v" style={{width:'40px', textAlign:'right'}}>{uncVal}%</span>
+                         </>
+                       ) : <span className="v">Not in dataset</span>}
                     </div>
                   </div>
                 );
@@ -442,12 +418,15 @@ export default function AssuranceShell() {
                 <thead><tr><th>Assumption</th><th>Limit</th><th>Now</th><th>Status</th></tr></thead>
                 <tbody>
                   {contract.assumptions.map(a => {
-                    const status = a.check(evidence);
-                    const val = evidence.items[a.id]?.value ?? 'no data';
+                    const result = checks[a.id];
+                    const inDataset = a.inDataset !== false;
+                    const status = inDataset ? (result?.status ?? 'unk') : 'unk';
+                    const val = inDataset ? (result?.value ?? 'Not in dataset') : 'Not in dataset';
+                    const focused = alertFocus === a.id;
                     return (
-                      <tr key={a.id}>
+                      <tr key={a.id} style={focused ? {background:'rgba(196,22,42,0.08)'} : undefined}>
                         <td>{a.label}</td><td>{a.limit}</td><td className="v">{val}</td>
-                        <td><span className={`v2-st ${status}`} style={{textAlign:'left'}}>{status === 'ok' ? 'Within limit' : status === 'warn' ? 'Watch' : status === 'bad' ? 'Violated' : 'No data'}</span></td>
+                        <td><span className={`v2-st ${status}`} style={{textAlign:'left'}}>{!inDataset ? 'Not in dataset' : status === 'ok' ? 'Within limit' : status === 'warn' ? 'Watch' : status === 'bad' ? 'Violated' : 'No data'}</span></td>
                       </tr>
                     );
                   })}
@@ -461,10 +440,11 @@ export default function AssuranceShell() {
           <div className="v2-view on">
             <div className="v2-panel v2-c12">
               <h2>Sensor fusion check</h2>
-              {fusionReport ? (
+              {fusionReport && fusionReport.rankedCauses.length > 0 ? (
                 <>
                   <p style={{color:'var(--ink2)', fontSize:'13px', marginBottom:'16px'}}>
-                    Camera and LiDAR disagree. Location: <b>{fusionReport.conflictLocation}</b>
+                    Camera and LiDAR disagree. Location: <b>{fusionReport.conflictLocation ?? 'Not enough evidence'}</b>
+                    {fusionReport.unresolved && <span style={{color:'#a15c00'}}> — unresolved, cause not confirmed</span>}
                   </p>
                   {fusionReport.syncFault ? (
                     <div className="v2-rec" style={{'--c': 'var(--blk)'} as any}>Sync fault: cannot align sensors.</div>
@@ -501,7 +481,7 @@ export default function AssuranceShell() {
                   )}
                 </>
               ) : (
-                <p style={{color:'var(--ink2)', fontSize:'12px'}}>No sensor conflict active. Select the "Camera and LiDAR conflict" scenario.</p>
+                <p style={{color:'var(--ink2)', fontSize:'12px'}}>No sustained sensor conflict in the current replay. Conflict signals must persist for 5 frames before a report is produced.</p>
               )}
             </div>
           </div>
@@ -603,14 +583,9 @@ export default function AssuranceShell() {
                       setSourceType('telemetry');
                     }}
                   >
-                    Live Telemetry Dashboard
+                    Replay Telemetry Dashboard
                   </button>
                 </div>
-                <DatasetImporter onImport={async (url) => {
-                  // TODO: Implement dataset import
-                  console.log('Importing dataset from:', url);
-                  alert('Dataset import feature - coming soon');
-                }} />
                 <p style={{fontSize:'11px', color:'var(--ink2)', margin:0}}>
                   Attribution: NVIDIA r2b Dataset 2023 (CC BY 4.0). Faults injected by converter.
                 </p>
@@ -624,7 +599,7 @@ export default function AssuranceShell() {
             <div className="v2-panel v2-c12">
               <h2>Incident replay</h2>
               {incidents.length === 0 ? (
-                <p style={{color:'var(--ink2)', fontSize:'12px'}}>No incidents recorded yet. Generate some state changes or operator actions in the Live view.</p>
+                <p style={{color:'var(--ink2)', fontSize:'12px'}}>No incidents recorded yet. Generate some state changes or operator actions in the Evidence view.</p>
               ) : (
                 <>
                   {/* Incident list */}
@@ -667,13 +642,9 @@ export default function AssuranceShell() {
               <div style={{gridColumn:'span 12'}}>
                 <FleetView
                   aggregator={fleetAggregator}
-                  onSelectRobot={(id) => {
-                    // Phase 7 spec: robot card click routes to Live view with that robot's evidence
-                    if (syntheticEnabled) {
-                      setSourceType('synthetic');
-                      setReplayScenario(null);
-                      setScenario('conflict'); // RB-04 uses conflict scenario data
-                    }
+                  onSelectRobot={() => {
+                    // Single-robot dataset: the fleet card opens the Evidence view,
+                    // which already shows this robot's real evidence.
                     setView('live');
                   }}
                 />
@@ -688,7 +659,7 @@ export default function AssuranceShell() {
       </main>
 
       <nav className="v2-dock" aria-label="Views">
-        <button className={view === 'live' ? 'on' : ''} onClick={() => setView('live')}><span aria-hidden="true">◉</span><span className="tip">Live</span></button>
+        <button className={view === 'live' ? 'on' : ''} onClick={() => setView('live')}><span aria-hidden="true">◉</span><span className="tip">Evidence</span></button>
         <button className={view === 'fusion' ? 'on' : ''} onClick={() => setView('fusion')}><span aria-hidden="true">⇄</span><span className="tip">Sensor fusion</span></button>
         <button className={view === 'contract' ? 'on' : ''} onClick={() => setView('contract')}><span aria-hidden="true">☰</span><span className="tip">Contract</span></button>
         <button className={view === 'replay' ? 'on' : ''} onClick={() => setView('replay')}><span aria-hidden="true">↺</span><span className="tip">Replay</span></button>

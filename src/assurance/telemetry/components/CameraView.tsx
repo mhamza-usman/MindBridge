@@ -56,7 +56,7 @@ export default function CameraView({ data, width = 400, height = 300, label }: C
 
       ctx.font = '11px sans-serif';
       ctx.fillStyle = '#94a3b8';
-      ctx.fillText('(Images update every 1 second)', width / 2, height / 2 + 20);
+      ctx.fillText('(Replay frames ~1 Hz)', width / 2, height / 2 + 20);
     }
 
     // Draw frame info
@@ -64,7 +64,7 @@ export default function CameraView({ data, width = 400, height = 300, label }: C
     ctx.fillRect(10, 10, 180, 40);
     ctx.fillStyle = '#ffffff';
     ctx.font = '10px monospace';
-    ctx.fillText(data.has_image ? `Live: ${data.original_width}x${data.original_height}` : lastImage ? 'Cached frame' : 'No data', 15, 25);
+    ctx.fillText(data.has_image ? `Replay: ${data.original_width}x${data.original_height}` : lastImage ? 'Cached frame' : 'No data', 15, 25);
     ctx.fillText('Source: NVIDIA r2b 2023', 15, 40);
 
   }, [data, width, height, lastImage]);
@@ -76,7 +76,7 @@ export default function CameraView({ data, width = 400, height = 300, label }: C
           {label || 'Camera Feed'}
         </h4>
         <span style={{ fontSize: '11px', color: '#94a3b8' }}>
-          {data.has_image ? 'Live (NVIDIA r2b)' : lastImage ? 'Cached frame' : 'No data'}
+          {data.has_image ? 'Replay (NVIDIA r2b)' : lastImage ? 'Cached frame' : 'No data'}
         </span>
       </div>
       <canvas

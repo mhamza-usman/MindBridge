@@ -6,6 +6,127 @@ export interface ReplaySourceOptions {
   sseUrl?: string;
 }
 
+const DERIVED_PERCEPTION = 'min(100, max(0, 92 - cam_age_ms*0.08 - lidar_age_ms*0.05))';
+const DERIVED_UNCERTAINTY = 'max(0, 100 - perception_pct)';
+const DERIVED_TF_AGE = 't - /tf_static publish time (static transform, not a live TF stream)';
+const DERIVED_AGREE = 'consistency flag emitted by converter; true in nominal data, false only in injected fault windows';
+const DERIVED_GLARE = 'fault-injection parameter from converter (0 outside injected windows)';
+const DERIVED_SAT = 'fault-injection parameter from converter (0 outside injected windows)';
+
+function num(v: any): number | null {
+  if (v === null || v === undefined) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function bool(v: any): boolean | null {
+  if (v === null || v === undefined) return null;
+  return v === true || v === 'true';
+}
+
+/**
+ * Map one JSONL replay line to an EvidenceSnapshot.
+ * Only fields actually present in the line become evidence items; absent
+ * fields produce no item (contract shows "Not in dataset"). Computed fields
+ * carry a `derived` formula string for the DERIVED label.
+ */
+export function replayLineToSnapshot(line: any): EvidenceSnapshot {
+  // Legacy format: has evidence field
+  if (line.evidence) {
+    const items: Record<string, EvidenceItem> = {};
+    for (const [k, v] of Object.entries(line.evidence || {})) {
+      items[k] = {
+        id: k,
+        label: k,
+        value: String(v),
+        status: 'ok',
+        source: 'replay',
+        t: line.t
+      };
+    }
+    return { t: line.t, items };
+  }
+
+  const t = line.t ?? 0;
+  const items: Record<string, EvidenceItem> = {};
+
+  const camAge = num(line.cam_age_ms ?? line.camera_age_ms);
+  if (camAge !== null) {
+    const violated = line.cam_violated ?? camAge > 200;
+    items['camera_age_ms'] = {
+      id: 'camera_age_ms', label: 'Camera freshness', value: String(camAge), unit: 'ms',
+      status: violated ? 'bad' : 'ok', source: 'replay', t
+    };
+  }
+
+  const lidarAge = num(line.lidar_age_ms);
+  if (lidarAge !== null) {
+    const violated = line.lidar_violated ?? lidarAge > 200;
+    items['lidar_age_ms'] = {
+      id: 'lidar_age_ms', label: 'LiDAR freshness', value: String(lidarAge), unit: 'ms',
+      status: violated ? 'bad' : 'ok', source: 'replay', t
+    };
+  }
+
+  const tfAge = num(line.tf_age_ms);
+  if (tfAge !== null) {
+    items['tf_age_ms'] = {
+      id: 'tf_age_ms', label: 'TF age (static)', value: String(tfAge), unit: 'ms',
+      status: tfAge > 500 ? 'warn' : 'ok', source: 'replay', t, derived: DERIVED_TF_AGE
+    };
+  }
+
+  const camRate = num(line.cam_rate_hz);
+  if (camRate !== null) {
+    items['cam_rate_hz'] = {
+      id: 'cam_rate_hz', label: 'Camera rate', value: String(camRate), unit: 'Hz',
+      status: camRate < 10 ? 'warn' : 'ok', source: 'replay', t
+    };
+  }
+
+  const satPct = num(line.saturated_px_pct);
+  if (satPct !== null) {
+    items['saturated_px_pct'] = {
+      id: 'saturated_px_pct', label: 'Saturated pixels', value: String(satPct), unit: '%',
+      status: satPct > 5 ? 'warn' : 'ok', source: 'replay', t, derived: DERIVED_SAT
+    };
+  }
+
+  const glare = bool(line.glare_detected);
+  if (glare !== null) {
+    items['glare_detected'] = {
+      id: 'glare_detected', label: 'Glare detected', value: String(glare),
+      status: glare ? 'bad' : 'ok', source: 'replay', t, derived: DERIVED_GLARE
+    };
+  }
+
+  const agree = bool(line.sensors_agree);
+  if (agree !== null) {
+    items['sensors_agree'] = {
+      id: 'sensors_agree', label: 'Camera and LiDAR agree', value: String(agree),
+      status: agree ? 'ok' : 'bad', source: 'replay', t, derived: DERIVED_AGREE
+    };
+  }
+
+  const perc = num(line.perception_pct);
+  if (perc !== null) {
+    items['perception_pct'] = {
+      id: 'perception_pct', label: 'Perception confidence', value: String(perc), unit: '%',
+      status: perc < 70 ? 'warn' : 'ok', source: 'replay', t, derived: DERIVED_PERCEPTION
+    };
+  }
+
+  const unc = num(line.uncertainty_pct);
+  if (unc !== null) {
+    items['uncertainty_pct'] = {
+      id: 'uncertainty_pct', label: 'Uncertainty', value: String(unc), unit: '%',
+      status: unc > 30 ? 'warn' : 'ok', source: 'replay', t, derived: DERIVED_UNCERTAINTY
+    };
+  }
+
+  return { t, items, source: 'replay' };
+}
+
 export class ReplaySource implements EvidenceSource {
   public id = 'replay_source_1';
   public kind: 'replay' = 'replay';
@@ -37,7 +158,6 @@ export class ReplaySource implements EvidenceSource {
       es.onmessage = (ev) => {
         try {
           const data = JSON.parse(ev.data);
-          // Convert raw SSE format to EvidenceSnapshot
           this.emit(data);
         } catch {
           // ignore malformed lines
@@ -78,135 +198,6 @@ export class ReplaySource implements EvidenceSource {
   }
 
   private emit(line: any) {
-    // Legacy format: has evidence field
-    if (line.evidence) {
-      const items: Record<string, EvidenceItem> = {};
-      for (const [k, v] of Object.entries(line.evidence || {})) {
-        items[k] = {
-          id: k,
-          label: k,
-          value: String(v),
-          status: 'ok',
-          source: 'replay',
-          t: line.t
-        };
-      }
-      const s: EvidenceSnapshot = { t: line.t, items };
-      this.notifySnapshot(s);
-    } else {
-      // SSE stream format: convert raw fields to EvidenceSnapshot
-      // Use dataset-provided violation flags if available (from converter)
-      const camAge = line.cam_age_ms ?? line.camera_age_ms ?? 0;
-      const lidarAge = line.lidar_age_ms ?? 0;
-      const tfAge = line.tf_age_ms ?? 45;
-      const battery = line.battery_pct ?? line.battery_reserve_pct ?? 78;
-      const calib = line.calibration_valid ?? true;
-      const agree = line.sensors_agree ?? true;
-
-      // Use dataset's violation flags if present, otherwise calculate
-      const camViolated = line.cam_violated ?? (camAge > 200);
-      const lidarViolated = line.lidar_violated ?? (lidarAge > 200);
-
-      const items: Record<string, EvidenceItem> = {
-        'camera_age_ms': {
-          id: 'camera_age_ms',
-          label: 'Camera freshness',
-          value: String(camAge),
-          unit: 'ms',
-          status: camViolated ? 'bad' : 'ok',
-          source: 'replay',
-          t: line.t
-        },
-        'lidar_age_ms': {
-          id: 'lidar_age_ms',
-          label: 'LiDAR freshness',
-          value: String(lidarAge),
-          unit: 'ms',
-          status: lidarViolated ? 'bad' : 'ok',
-          source: 'replay',
-          t: line.t
-        },
-        'tf_age_ms': {
-          id: 'tf_age_ms',
-          label: 'TF age',
-          value: String(tfAge),
-          unit: 'ms',
-          status: tfAge > 500 ? 'bad' : 'ok',
-          source: 'replay',
-          t: line.t
-        },
-        'localization_std_m': {
-          id: 'localization_std_m',
-          label: 'Localization std dev',
-          value: String(line.localization_std_m ?? '0.032'),
-          unit: 'm',
-          status: 'ok',
-          source: 'replay',
-          t: line.t
-        },
-        'battery_reserve_pct': {
-          id: 'battery_reserve_pct',
-          label: 'Battery reserve',
-          value: String(battery),
-          unit: '%',
-          status: battery < 20 ? 'bad' : 'ok',
-          source: 'replay',
-          t: line.t
-        },
-        'calibration_valid': {
-          id: 'calibration_valid',
-          label: 'Calibration valid',
-          value: String(calib),
-          status: calib ? 'ok' : 'bad',
-          source: 'replay',
-          t: line.t
-        },
-        'sensors_agree': {
-          id: 'sensors_agree',
-          label: 'Camera and LiDAR agree',
-          value: String(agree),
-          status: agree ? 'ok' : 'bad',
-          source: 'replay',
-          t: line.t
-        },
-        'cam_rate_hz': {
-          id: 'cam_rate_hz',
-          label: 'Camera rate',
-          value: String(line.cam_rate_hz || 0),
-          unit: 'Hz',
-          status: (line.cam_rate_hz || 0) < 10 ? 'warn' : 'ok',
-          source: 'replay',
-          t: line.t
-        },
-        'glare_detected': {
-          id: 'glare_detected',
-          label: 'Glare detected',
-          value: String(line.glare_detected ?? false),
-          status: line.glare_detected ? 'bad' : 'ok',
-          source: 'replay',
-          t: line.t
-        },
-        'perception_pct': {
-          id: 'perception_pct',
-          label: 'Perception confidence',
-          value: String(line.perception_pct || 0),
-          unit: '%',
-          status: (line.perception_pct || 0) < 70 ? 'warn' : 'ok',
-          source: 'replay',
-          t: line.t
-        },
-        'uncertainty_pct': {
-          id: 'uncertainty_pct',
-          label: 'Uncertainty',
-          value: String(line.uncertainty_pct || 0),
-          unit: '%',
-          status: (line.uncertainty_pct || 0) > 30 ? 'warn' : 'ok',
-          source: 'replay',
-          t: line.t
-        }
-      };
-      const s: EvidenceSnapshot = { t: line.t, items, source: 'replay' };
-      this.notifySnapshot(s);
-    }
+    this.notifySnapshot(replayLineToSnapshot(line));
   }
 }

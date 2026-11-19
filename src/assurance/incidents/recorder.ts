@@ -1,6 +1,6 @@
 import { IncidentBundle, IncidentEvent } from './types';
 import { IncidentStore } from './store';
-import { AssuranceState } from '../domain/types';
+import { AssuranceState, EvidenceSnapshot } from '../domain/types';
 
 export class IncidentRecorder {
   private bundle: IncidentBundle | null = null;
@@ -12,7 +12,6 @@ export class IncidentRecorder {
       mission,
       started_at: new Date().toISOString(),
       contract_version: contractVersion,
-      model: { nesy_iv: "v0.x", calibration_set: "cal_2026_09_17", coverage_target: 0.90 },
       known: [],
       unknown: [],
       violated: [],
@@ -26,13 +25,20 @@ export class IncidentRecorder {
     IncidentStore.save(this.bundle);
   }
 
-  public recordState(state: AssuranceState, why: string[], recommendation: string, known: string[], unknown: string[], violated: string[]) {
+  public recordState(state: AssuranceState, why: string[], recommendation: string, known: string[], unknown: string[], violated: string[], evidence?: EvidenceSnapshot | null) {
     if (!this.bundle) return;
     if (this.lastState !== state) {
       this.bundle.events.push({
         t: new Date().toISOString(),
         type: 'state_transition',
-        data: { from: this.lastState, to: state, why }
+        data: {
+          from: this.lastState,
+          to: state,
+          why,
+          // Per-transition evidence snapshot: values, nulls, and the checks
+          // that were violated at this moment. The bundle replays from this.
+          snapshot: evidence ?? null
+        }
       });
       this.lastState = state;
     }

@@ -1,28 +1,30 @@
+export interface CameraFrame {
+  image_base64?: string | null;
+  width: number;
+  height: number;
+  has_image: boolean;
+  original_width?: number;
+  original_height?: number;
+  /** ROS encoding the frame was decoded from (e.g. '8UC3', '16UC1') */
+  encoding?: string;
+  /** DERIVED: Laplacian-variance sharpness computed by the converter */
+  sharpness?: number;
+}
+
 export interface TelemetryData {
   t: number;
   source: string;
   cam_age_ms: number;
   lidar_age_ms: number;
-  camera?: {
-    image_base64?: string | null;
-    width: number;
-    height: number;
-    has_image: boolean;
-    original_width?: number;
-    original_height?: number;
-  };
-  cameras?: Record<string, {
-    image_base64?: string | null;
-    width: number;
-    height: number;
-    has_image: boolean;
-    original_width?: number;
-    original_height?: number;
-  }>;
+  camera?: CameraFrame;
+  cameras?: Record<string, CameraFrame> | null;
   lidar?: {
-    points: Array<{ x: number; y: number; z: number }>;
+    points: Array<{ x: number; y: number; z: number; i?: number }>;
     num_points: number;
     has_lidar: boolean;
+    point_count?: number;
+    /** DERIVED: mean intensity of returned points */
+    mean_intensity?: number;
   };
   imu?: {
     accel_x: number;
@@ -43,7 +45,6 @@ export class TelemetrySource {
   private sseUrl: string;
   private esRef: EventSource | null = null;
   private listeners: Array<(data: TelemetryData) => void> = [];
-  private timerRef: NodeJS.Timeout | null = null;
 
   constructor({ sseUrl }: { sseUrl: string }) {
     this.sseUrl = sseUrl;
@@ -77,9 +78,5 @@ export class TelemetrySource {
     this.esRef?.close();
     this.esRef = null;
     this.listeners = [];
-    if (this.timerRef) {
-      clearInterval(this.timerRef);
-      this.timerRef = null;
-    }
   }
 }

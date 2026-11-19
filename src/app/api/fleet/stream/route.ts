@@ -1,25 +1,54 @@
 import { NextRequest } from 'next/server';
-import { createSyntheticFleet } from '../../../../assurance/fleet/syntheticFleet';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { createReplayFleet, REPLAY_ROBOT_ID, NOT_IN_DATASET } from '../../../../assurance/fleet/replayFleet';
+import { replayLineToSnapshot } from '../../../../assurance/sources/replay';
+import { AssuranceState } from '../../../../assurance/domain/types';
 
 /**
  * GET /api/fleet/stream
  *
- * Server-Sent Events endpoint that pushes FleetSnapshot JSON to the client
- * every time the aggregator emits an update.
- *
- * The fleet UI currently uses in-process subscription (same JS heap) which
- * works perfectly for the single-process Cloud Run deployment. This SSE
- * endpoint exposes the same data stream for external consumers (monitoring
- * dashboards, mobile apps, tests) without requiring a WebSocket upgrade.
+ * Server-Sent Events endpoint that pushes FleetSnapshot JSON to the client.
+ * Backed by the single real robot in the r2b replay data — the dataset has no
+ * multi-robot fleet, so the snapshot carries exactly one robot and rollout
+ * fields are "Not in dataset".
  *
  * Read-only. Never accepts writes. Never commands a robot.
  */
 
-// Module-level singleton so all SSE clients share the same aggregator state.
-let aggregator: ReturnType<typeof createSyntheticFleet> | null = null;
+const VALID_STATES: AssuranceState[] = ['Autonomous', 'Degraded', 'Supervised', 'Unknown', 'Blocked'];
+
+let aggregator: ReturnType<typeof createReplayFleet> | null = null;
+let pumpStarted = false;
+
 function getAggregator() {
-  if (!aggregator) aggregator = createSyntheticFleet();
+  if (!aggregator) {
+    aggregator = createReplayFleet();
+    startPump(aggregator);
+  }
   return aggregator;
+}
+
+function startPump(agg: ReturnType<typeof createReplayFleet>) {
+  if (pumpStarted) return;
+  pumpStarted = true;
+
+  let lines: any[] = [];
+  try {
+    const raw = readFileSync(join(process.cwd(), 'public/replay/r2b_nominal.jsonl'), 'utf8');
+    lines = raw.split('\n').filter(l => l.trim()).map(l => JSON.parse(l));
+  } catch {
+    // No replay file: fleet stays at the registered robot's initial state.
+    return;
+  }
+
+  let idx = 0;
+  setInterval(() => {
+    const line = lines[idx % lines.length];
+    idx += 1;
+    const state = VALID_STATES.includes(line?.state) ? line.state : 'Unknown';
+    agg.updateRobotState(REPLAY_ROBOT_ID, state, replayLineToSnapshot(line), NOT_IN_DATASET);
+  }, 100);
 }
 
 export const dynamic = 'force-dynamic';
@@ -40,15 +69,12 @@ export async function GET(_req: NextRequest) {
         }
       };
 
-      // Push current snapshot immediately on connect
       send(JSON.stringify(agg.getSnapshot()));
 
-      // Subscribe to future updates
       const unsub = agg.subscribe((snap) => {
         send(JSON.stringify(snap));
       });
 
-      // Clean up when the client disconnects
       _req.signal.addEventListener('abort', () => {
         unsub();
         try { controller.close(); } catch { /* ignore */ }
@@ -60,7 +86,7 @@ export async function GET(_req: NextRequest) {
     headers: {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache, no-transform',
-      'X-Accel-Buffering': 'no',       // disable nginx buffering on Cloud Run
+      'X-Accel-Buffering': 'no',
       'Connection': 'keep-alive',
     },
   });

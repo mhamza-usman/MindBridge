@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Body
 from fastapi.responses import StreamingResponse
-import asyncio, base64, io, json, random, time, math, re
+import asyncio, json, time, re
 from google.cloud import storage
 
 from src.robot_render import build_payload, classify, surface_ops
@@ -8,19 +8,13 @@ from src.robot_render import build_payload, classify, surface_ops
 router = APIRouter()
 
 def generate_nesy_state():
-    t = time.time()
+    """Latest telemetry frame, or an explicit error state when unavailable."""
+    _load_gcs_log()
+    if _LOG_FRAMES:
+        return _LOG_FRAMES[-1]
     return {
-        "episode": int(t / 30) % 100,
-        "task_success_rate": round(0.993 + random.gauss(0, 0.002), 3),
-        "perception_confidence": round(0.85 + 0.08 * math.sin(t * 0.3), 3),
-        "plan_certainty": round(0.78 + random.gauss(0, 0.025), 3),
-        "system_uncertainty": round(abs(0.11 + random.gauss(0, 0.015)), 3),
-        "nesy_conf": round(0.934 + random.gauss(0, 0.01), 3),
-        "ece": 0.0073,
-        "phase": "EXECUTING" if random.random() > 0.15 else "PLANNING",
-        "current_action": random.choice(["pick","place","navigate","grasp","verify"]),
-        "blocks_detected": random.randint(2, 5),
-        "mcnemar_c": 0,
+        "state": "unavailable",
+        "error": "Telemetry log could not be loaded from GCS. No fabricated values are served.",
     }
 
 @router.get("/robot/state")
@@ -29,10 +23,17 @@ def get_robot_state():
 
 @router.get("/robot/history")
 def get_robot_history():
-    t = time.time()
+    _load_gcs_log()
+    if not _LOG_FRAMES:
+        return {
+            "state": "unavailable",
+            "error": "Telemetry log could not be loaded from GCS.",
+            "history": [],
+        }
+    # Real task_success_rate series from the log frames (last 10 sampled points).
     return [
-        {"label": f"Ep {i}", "value": round(0.988 + math.sin(i * 0.4) * 0.006, 3)}
-        for i in range(10)
+        {"label": f"Ep {f.get('episode', i)}", "value": f.get("task_success_rate")}
+        for i, f in enumerate(_LOG_FRAMES[-10:])
     ]
 
 
@@ -68,8 +69,6 @@ def render_telemetry(telemetry: dict = Body(...)):
         "a2ui_operations": surface_ops(telemetry),
     }
 
-
-_STREAM_PERIOD_S = 48.0  # fallback period
 
 _LOG_FRAMES = []
 _LOADED_GCS_LOG = False
@@ -140,6 +139,10 @@ def _load_gcs_log():
                 phase = "EXECUTING"
                 
             if i % 15 == 0:
+                # blocks_detected is not in the log; derive it from actual
+                # "block" mentions in the recent window instead of inventing it.
+                window = lines[max(0, i - 50):i]
+                blocks_detected = sum(1 for l in window if "block" in l.lower())
                 frames.append({
                     "episode": episode,
                     "task_success_rate": round(task_success_rate, 3),
@@ -150,47 +153,35 @@ def _load_gcs_log():
                     "ece": 0.0073,
                     "phase": phase,
                     "current_action": current_action,
-                    "blocks_detected": random.randint(2, 5),
+                    "blocks_detected": blocks_detected,
                 })
         _LOG_FRAMES = frames
         print(f"Loaded {len(_LOG_FRAMES)} frames from GCS log.")
     except Exception as e:
         print(f"Failed to load GCS log: {e}")
 
+TELEMETRY_UNAVAILABLE = {
+    "state": "unavailable",
+    "error": "Telemetry log could not be loaded from GCS. No fabricated values are served.",
+}
+
 def generate_stream_frame():
     _load_gcs_log()
     if _LOG_FRAMES:
         idx = int(time.time() * 2) % len(_LOG_FRAMES)
         return _LOG_FRAMES[idx]
-
-    # Fallback to simulated data if log fails to load
-    t = time.time()
-    phase = (t % _STREAM_PERIOD_S) / _STREAM_PERIOD_S  # 0..1
-    triangle = 1 - abs(2 * phase - 1)  # 0..1..0
-    nesy = round(0.30 + 0.66 * triangle + random.gauss(0, 0.008), 3)
-    nesy = max(0.05, min(0.99, nesy))
-    perception = round(max(0.05, min(0.99, nesy - 0.02 + random.gauss(0, 0.02))), 3)
-    plan = round(max(0.05, min(0.99, nesy - 0.03 + random.gauss(0, 0.02))), 3)
-    su = round(max(0.02, min(0.95, 1 - nesy + random.gauss(0, 0.02))), 3)
-    blocks = max(0, round(1 + triangle * 4))
-    return {
-        "episode": int(t / 6) % 1000,
-        "task_success_rate": round(max(0.80, min(0.999, 0.86 + 0.13 * triangle)), 3),
-        "perception_confidence": perception,
-        "plan_certainty": plan,
-        "system_uncertainty": su,
-        "nesy_conf": nesy,
-        "ece": 0.0073,
-        "phase": "EXECUTING" if nesy >= 0.6 else "PLANNING",
-        "current_action": random.choice(["pick", "place", "navigate", "grasp", "verify"]),
-        "blocks_detected": blocks,
-    }
+    # Explicit error state — never serve random/simulated telemetry as if real.
+    return dict(TELEMETRY_UNAVAILABLE)
 
 
 @router.get("/robot/frame")
 def get_stream_frame():
     """Single evolving telemetry frame (the /live page polls this)."""
-    return generate_stream_frame()
+    frame = generate_stream_frame()
+    if frame.get("state") == "unavailable":
+        from fastapi import HTTPException
+        raise HTTPException(status_code=503, detail=frame["error"])
+    return frame
 
 
 @router.get("/robot/stream")
@@ -206,6 +197,10 @@ async def stream_robot_state():
     async def generate():
         while True:
             frame = generate_stream_frame()
+            if frame.get("state") == "unavailable":
+                yield f"event: error\ndata: {json.dumps(frame)}\n\n"
+                await asyncio.sleep(5)
+                continue
             yield f"data: {json.dumps(frame)}\n\n"
             await asyncio.sleep(1)
 
@@ -222,37 +217,12 @@ async def stream_robot_state():
 @router.get("/robot/camera/{view}")
 def get_camera_feed(view: str):
     """
-    Returns a simulated robot camera view as base64 PNG.
-    In production this would be the actual PyBullet render.
-    For demo: returns metadata about what the camera sees.
+    Camera metadata endpoint. This dataset has no camera feed service, so the
+    endpoint reports unavailability honestly instead of inventing camera data.
     """
-    views = {
-        "top": {
-            "view": "top",
-            "label": "Top-down overview camera",
-            "description": "Overhead view showing full workspace",
-            "feed_url": "http://localhost:8123/robot/camera/top/frame",
-            "confidence": round(random.uniform(0.6, 0.95), 3),
-            "objects_visible": random.randint(2, 5),
-            "target_in_frame": random.choice([True, True, True, False]),
-        },
-        "wrist": {
-            "view": "wrist",
-            "label": "Wrist-mounted camera",
-            "description": "Close-up view from robot end-effector",
-            "feed_url": "http://localhost:8123/robot/camera/wrist/frame",
-            "confidence": round(random.uniform(0.4, 0.85), 3),
-            "objects_visible": random.randint(0, 2),
-            "target_in_frame": random.choice([True, False, False]),
-        },
-        "front": {
-            "view": "front",
-            "label": "Front-facing camera",
-            "description": "Forward view showing approach vector",
-            "feed_url": "http://localhost:8123/robot/camera/front/frame",
-            "confidence": round(random.uniform(0.5, 0.9), 3),
-            "objects_visible": random.randint(1, 4),
-            "target_in_frame": random.choice([True, True, False]),
-        }
+    return {
+        "view": view,
+        "available": False,
+        "state": "unavailable",
+        "error": "No camera feed service is configured. Camera imagery for the r2b dataset is served via /api/telemetry replay, not this endpoint.",
     }
-    return views.get(view, views["front"])

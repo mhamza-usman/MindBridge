@@ -98,10 +98,10 @@ export default function TelemetryLayout({ sseUrl, onBack }: TelemetryLayoutProps
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
         <div>
           <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 600, color: '#111827' }}>
-            Live Telemetry Dashboard
+            Replay Telemetry Dashboard
           </h2>
           <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#6b7280' }}>
-            Real-time sensor data from NVIDIA r2b 2023 dataset
+            Replayed sensor data from NVIDIA r2b 2023 dataset
           </p>
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
@@ -219,10 +219,10 @@ export default function TelemetryLayout({ sseUrl, onBack }: TelemetryLayoutProps
             <div style={{ fontSize: '12px', color: '#6b7280' }}>
               <span style={{ fontWeight: 600, color: '#111827' }}>Data Points:</span> {telemetryData.length} |
               <span style={{ fontWeight: 600, color: '#111827', marginLeft: '8px' }}>Window:</span> 60s |
-              <span style={{ fontWeight: 600, color: '#111827', marginLeft: '8px' }}>Source:</span> r2b_live_telemetry
+              <span style={{ fontWeight: 600, color: '#111827', marginLeft: '8px' }}>Source:</span> {telemetryData[0]?.source ?? 'replay'}
             </div>
             <div style={{ fontSize: '12px', color: '#10b981', fontWeight: 600 }}>
-              ● Streaming Active
+              ● Replay streaming
             </div>
           </div>
         </>

@@ -20,6 +20,8 @@
     "new-widget": "./scripts/new-widget.sh",
     "new-example": "tsx scripts/new-example.ts",
     "theme:reset": "tsx scripts/theme-reset.ts",
+    "test": "tsx src/assurance/domain/stateMachine.test.ts && tsx src/assurance/fusion/detector.test.ts && tsx src/assurance/fleet/FleetAggregator.test.ts && tsx src/assurance/sources/replay.test.ts && tsx src/assurance/api/routes.test.ts",
+    "harness:real": "tsx src/assurance/baseline/run_real_harness.ts",
     "test:widgets": "tsx scripts/test-widgets.ts",
     "test:schemas": "cd agent && uv run python -m pytest tests/ -v",
     "check-a2a": "tsx a2a/compliance/check.ts"

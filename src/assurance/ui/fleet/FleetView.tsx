@@ -23,8 +23,10 @@ export function FleetView({ aggregator, onSelectRobot, sseUrl }: FleetViewProps)
   const [snap, setSnap] = useState<FleetSnapshot>(aggregator.getSnapshot());
   const [logMsg, setLogMsg] = useState('');
 
-  // Dataset has no multi-robot data - show "Not in dataset" message
-  const hasMultiRobotData = false; // Dataset is single robot only
+  // The r2b dataset contains a single robot. Show that one real robot and say
+  // plainly that multi-robot data is not in the dataset.
+  const singleRobot = snap.robots.length <= 1;
+  const rolloutKnown = snap.rollout.to_version !== 'Not in dataset';
 
   // In-process subscription (primary)
   useEffect(() => {
@@ -62,28 +64,20 @@ export function FleetView({ aggregator, onSelectRobot, sseUrl }: FleetViewProps)
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
 
-      {/* Fleet banner */}
-      {!hasMultiRobotData ? (
-        <div className="v2-panel" style={{ padding: '24px', textAlign: 'center' }}>
-          <h2 style={{ margin: '0 0 12px 0', fontSize: '18px', color: '#111827' }}>
-            Multi-robot data not in dataset
-          </h2>
-          <p style={{ margin: '0 0 16px 0', fontSize: '13px', color: '#6b7280', lineHeight: '1.5' }}>
-            The NVIDIA r2b 2023 dataset contains sensor data from a single robot configuration.
-            To use the fleet view, you need a dataset with multiple robots.
-          </p>
-          <div style={{ 
-            padding: '12px', 
-            background: '#fef3c7', 
-            borderRadius: '8px', 
-            border: '1px solid #fcd34d',
-            fontSize: '12px',
-            color: '#92400e'
-          }}>
-            <strong>DERIVED:</strong> Fleet view would require multi-robot pose data
-          </div>
+      {/* Single-robot note */}
+      {singleRobot && (
+        <div className="v2-panel" style={{ padding: '14px 18px' }}>
+          <span style={{ fontSize: '13px', color: 'var(--ink)' }}>
+            <b>Multi-robot data not in dataset.</b>{' '}
+            <span style={{ color: 'var(--ink2)' }}>
+              The NVIDIA r2b 2023 dataset contains one robot configuration. Showing that robot's live assurance state.
+            </span>
+          </span>
         </div>
-      ) : (
+      )}
+
+      {/* Fleet banner — only meaningful with multiple robots */}
+      {!singleRobot && (
         <>
           <div className="v2-panel" style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '12px 18px' }}>
             <div>
@@ -128,7 +122,8 @@ export function FleetView({ aggregator, onSelectRobot, sseUrl }: FleetViewProps)
           )}
         </div>
 
-        {/* Rollout status */}
+        {/* Rollout status — only when rollout data exists */}
+        {rolloutKnown && (<>
         <div style={{ textAlign: 'right' }}>
           <div style={{ fontSize: '11px', color: 'var(--ink2)' }}>Rollout</div>
           <div style={{ fontSize: '12px', fontFamily: 'var(--mono)' }}>
@@ -159,12 +154,13 @@ export function FleetView({ aggregator, onSelectRobot, sseUrl }: FleetViewProps)
             Resume
           </button>
         </div>
+        </>)}
       </div>
       </>
       )}
 
       {/* Anomaly flag detail */}
-      {hasMultiRobotData && snap.rollout.anomaly_flagged && snap.rollout.flag_reason && (
+      {!singleRobot && snap.rollout.anomaly_flagged && snap.rollout.flag_reason && (
         <div className="v2-panel" style={{ background: 'rgba(196,22,42,.06)', border: '1px solid rgba(196,22,42,.20)', padding: '10px 16px' }}>
           <b style={{ color: '#c4162a', fontSize: '12px' }}>⚠ Rollout anomaly</b>
           <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--ink)' }}>{snap.rollout.flag_reason}</p>

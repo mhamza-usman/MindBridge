@@ -151,12 +151,11 @@ def generate(bag_path: str, args) -> list[dict]:
     while t <= duration:
         cam_age   = age_at(cam_ts,   t)
         lidar_age = age_at(lidar_ts, t)
-        tf_age    = min(age_at(tf_ts, t), 100.0) if tf_ts else 45.0
+        tf_age    = age_at(tf_ts, t) if tf_ts else None
         cam_rate  = rate_at(cam_ts,  t)
 
         glare_detected = False
         sensors_agree  = True
-        conflict_at_m  = None
         saturated_px   = 0.0
 
         # ---- INJECT: stale camera ----
@@ -170,7 +169,6 @@ def generate(bag_path: str, args) -> list[dict]:
             saturated_px   = 8.4
             glare_detected = True
             sensors_agree  = False
-            conflict_at_m  = 3.2
             cam_age        = min(cam_age, 90.0)
             lidar_age      = min(lidar_age, 70.0)
 
@@ -196,14 +194,13 @@ def generate(bag_path: str, args) -> list[dict]:
             "source"            : "replay_r2b_2023",
             "cam_age_ms"        : round(cam_age,   1),
             "lidar_age_ms"      : round(lidar_age, 1),
-            "tf_age_ms"         : round(tf_age,    1),
+            "tf_age_ms"         : round(tf_age,    1) if tf_age is not None else None,
             "cam_rate_hz"       : round(cam_rate,  1),
             "saturated_px_pct"  : round(saturated_px, 2),
             "glare_detected"    : glare_detected,
             "sensors_agree"     : sensors_agree,
-            "conflict_at_m"     : conflict_at_m,
-            "battery_pct"       : 78.0,
-            "calibration_valid" : True,
+            # DERIVED: perception/uncertainty are formulas of sensor ages, not
+            # measured confidence. Consumers must label them DERIVED.
             "perception_pct"    : round(min(100.0, base_conf), 1),
             "uncertainty_pct"   : round(max(0.0, 100.0 - base_conf), 1),
             "state"             : state,

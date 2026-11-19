@@ -146,7 +146,7 @@ function contractDetect(frames: EvidenceSnapshot[]): number {
   const contract = getDefaultContract();
   for (let i = 0; i < frames.length; i++) {
     const checks = evaluateContract(contract, frames[i]);
-    const violated = Object.values(checks).some(v => v === 'bad' || v === 'unk');
+    const violated = Object.values(checks).some(v => v.status === 'bad' || v.status === 'unk');
     if (violated) return i;
   }
   return -1;

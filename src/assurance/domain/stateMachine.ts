@@ -1,4 +1,4 @@
-import { AssuranceState, NeSyMode, Validity, AssuranceResult, EvidenceSnapshot } from './types';
+import { AssuranceState, NeSyMode, Validity, AssuranceResult, EvidenceSnapshot, ContractCheckResult } from './types';
 
 export interface StateMachineConfig {
   escalationTimeMs: number;
@@ -49,7 +49,7 @@ export class AssuranceStateMachine {
    */
   public tick(
     t: number,
-    contractStatus: Record<string, Validity>,
+    contractStatus: Record<string, ContractCheckResult | Validity>,
     fusionConflict: boolean,
     nesyMode: NeSyMode,
     evidence?: EvidenceSnapshot
@@ -68,11 +68,20 @@ export class AssuranceStateMachine {
     let blockReasons: string[] = [];
     let degradedReasons: string[] = [];
 
-    for (const [id, status] of Object.entries(contractStatus)) {
+    for (const [id, entry] of Object.entries(contractStatus)) {
+      const status: Validity = typeof entry === 'string' ? entry : entry.status;
       if (status === 'unk') {
-        unknownReasons.push(`${id} is missing, stale, or invalid`);
+        unknownReasons.push(
+          typeof entry === 'string'
+            ? `${id} is missing, stale, or invalid`
+            : `${entry.label}: ${entry.value} (limit ${entry.limit})`
+        );
       } else if (status === 'bad') {
-        degradedReasons.push(`${id} violated limit`);
+        degradedReasons.push(
+          typeof entry === 'string'
+            ? `${id} violated limit`
+            : `${entry.label}: ${entry.value} vs limit ${entry.limit}`
+        );
       }
     }
 

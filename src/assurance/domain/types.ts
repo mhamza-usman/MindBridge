@@ -9,6 +9,8 @@ export interface EvidenceItem {
   status: Validity;
   source: 'synthetic' | 'replay' | 'live';
   t: number;
+  /** Present when `value` is computed, not measured. Shown as DERIVED with this formula on hover. */
+  derived?: string;
 }
 
 export interface EvidenceSnapshot {
@@ -22,6 +24,16 @@ export interface Assumption {
   label: string;
   limit: string;
   check: (e: EvidenceSnapshot) => Validity;
+  /** false = the dataset does not contain this signal; UI shows "Not in dataset" and it is not evaluated. */
+  inDataset?: boolean;
+}
+
+/** Result of one contract check: actual value vs limit, for evidence-backed explanations. */
+export interface ContractCheckResult {
+  status: Validity;
+  value: string;
+  limit: string;
+  label: string;
 }
 
 export interface Contract {

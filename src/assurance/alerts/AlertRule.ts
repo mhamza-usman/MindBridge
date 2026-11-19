@@ -18,6 +18,15 @@ export interface Alert {
   recommendedAction: string;
 }
 
+/** Maps an alert rule to the contract assumption it evidences (for click-through). */
+export const ALERT_TO_ASSUMPTION: Record<string, string> = {
+  camera_stale: 'camera_age_ms',
+  lidar_stale: 'lidar_age_ms',
+  sensors_disagree: 'sensors_agree',
+  calibration_invalid: 'calibration_valid'
+  // perception_low / uncertainty_high have no contract row — they open Live view.
+};
+
 export const ALERT_RULES: AlertRule[] = [
   {
     id: 'camera_stale',
