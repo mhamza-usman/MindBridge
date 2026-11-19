@@ -11,6 +11,7 @@ import { DiagnosisReport } from "../fusion/detector";
 import { IncidentRecorder } from "../incidents/recorder";
 import { IncidentStore } from "../incidents/store";
 import { IncidentBundle } from "../incidents/types";
+import { isIncidentBundle } from "../incidents/replay";
 import { evaluateFusion } from "../fusion/detector";
 import { buildFusionInput, FusionMetrics } from "../fusion/inputBuilder";
 import { FusionMetricsBuffer } from "../fusion/telemetryMetrics";
@@ -21,7 +22,7 @@ import { ReplayScrubber } from "./ReplayScrubber";
 import { MonitoringPanel } from "./MonitoringPanel";
 import TelemetryLayout from "../telemetry/ui/TelemetryLayout";
 import CameraWall from "./CameraWall";
-import { checkAlerts, Alert, ALERT_TO_ASSUMPTION } from "../alerts/AlertRule";
+import { checkAlerts, Alert, ALERT_TO_ASSUMPTION, ALERT_RULES } from "../alerts/AlertRule";
 import { InterfaceSwitch } from "@/components/InterfaceSwitch";
 
 const STATE_COLORS: Record<AssuranceState, string> = {
@@ -194,10 +195,11 @@ export default function AssuranceShell() {
     }
   }, [fleetAggregator, res?.state, evidence]);
 
-  // Record state changes
+  // Record state changes and periodic evidence snapshots (recorder throttles to 2s)
   useEffect(() => {
     if (res && evidence) {
       recorder.recordState(res.state, res.why, res.recommendation, res.known, res.unknown, res.violated, evidence);
+      recorder.recordEvidence(evidence);
     }
   }, [res?.state, res?.why.join(','), recorder, evidence]); // trigger when state or why changes
 
@@ -310,9 +312,13 @@ export default function AssuranceShell() {
                           style={{padding:'8px', background:'rgba(196,22,42,0.06)', borderRadius:'6px', border:'1px solid rgba(196,22,42,0.2)', fontSize:'11px', cursor:'pointer'}}
                           title={target ? 'Click to see the failing contract check' : 'Click to view live evidence'}
                         >
-                          <div style={{fontWeight:600, color:'#c4162a'}}>{alert.ruleName} →</div>
+                          <div style={{fontWeight:600, color: alert.kind === 'unknown_evidence' ? 'var(--ink2)' : '#c4162a'}}>{alert.ruleName} →</div>
                           <div style={{color:'var(--ink2)', marginTop:'2px'}}>{alert.description}</div>
-                          <div style={{color:'var(--ink2)'}}>Value: {evidence.items[alert.ruleId]?.value || 'no data'}</div>
+                          {alert.kind === 'unknown_evidence' ? (
+                            <div style={{color:'var(--ink2)'}}>Missing: {alert.missingFields?.join(', ') || 'unknown'}</div>
+                          ) : (
+                            <div style={{color:'var(--ink2)'}}>Value: {evidence.items[ALERT_RULES.find(r => r.id === alert.ruleId)?.fields[0] ?? '']?.value || 'no data'}</div>
+                          )}
                         </div>
                       );
                     })}
@@ -598,11 +604,12 @@ export default function AssuranceShell() {
           <div className="v2-view on">
             <div className="v2-panel v2-c12">
               <h2>Incident replay</h2>
-              {incidents.length === 0 ? (
-                <p style={{color:'var(--ink2)', fontSize:'12px'}}>No incidents recorded yet. Generate some state changes or operator actions in the Evidence view.</p>
+              {incidents.length === 0 && !selectedIncident ? (
+                <p style={{color:'var(--ink2)', fontSize:'12px'}}>No incidents recorded yet. Generate some state changes or operator actions in the Evidence view, or load an exported bundle below.</p>
               ) : (
                 <>
                   {/* Incident list */}
+                  {incidents.length > 0 && (
                   <div style={{marginBottom:'12px', display:'flex', flexWrap:'wrap', gap:'8px'}}>
                     {incidents.map(inc => (
                       <button key={inc.incident_id} className="v2-btn"
@@ -613,6 +620,7 @@ export default function AssuranceShell() {
                       </button>
                     ))}
                   </div>
+                  )}
 
                   {/* Scrubber for selected incident */}
                   {selectedIncident ? (
@@ -632,6 +640,33 @@ export default function AssuranceShell() {
                   )}
                 </>
               )}
+
+              {/* Load an exported incident bundle — replays from its own snapshots only.
+                  Always reachable, even with zero locally recorded incidents. */}
+              <label className="v2-btn" style={{display:'inline-block', marginTop:'12px', cursor:'pointer'}}>
+                Load exported incident JSON…
+                <input type="file" accept="application/json,.json" style={{display:'none'}}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (!f) return;
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                      try {
+                        const parsed = JSON.parse(String(reader.result));
+                        if (!isIncidentBundle(parsed)) {
+                          setLogMsg('That file is not a valid incident bundle.');
+                          return;
+                        }
+                        setSelectedIncident(parsed);
+                        setLogMsg(`Loaded incident ${parsed.incident_id} — replaying from its own recorded evidence.`);
+                      } catch {
+                        setLogMsg('Could not parse that file as JSON.');
+                      }
+                    };
+                    reader.readAsText(f);
+                    e.target.value = '';
+                  }} />
+              </label>
             </div>
           </div>
         )}

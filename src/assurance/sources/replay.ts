@@ -12,6 +12,7 @@ const DERIVED_TF_AGE = 't - /tf_static publish time (static transform, not a liv
 const DERIVED_AGREE = 'consistency flag emitted by converter; true in nominal data, false only in injected fault windows';
 const DERIVED_GLARE = 'fault-injection parameter from converter (0 outside injected windows)';
 const DERIVED_SAT = 'fault-injection parameter from converter (0 outside injected windows)';
+const DERIVED_IMU_RATE = 'IMU message rate from /imu topic (Hz); absent when the recording has no IMU field';
 
 function num(v: any): number | null {
   if (v === null || v === undefined) return null;
@@ -113,6 +114,14 @@ export function replayLineToSnapshot(line: any): EvidenceSnapshot {
     items['perception_pct'] = {
       id: 'perception_pct', label: 'Perception confidence', value: String(perc), unit: '%',
       status: perc < 70 ? 'warn' : 'ok', source: 'replay', t, derived: DERIVED_PERCEPTION
+    };
+  }
+
+  const imuRate = num(line.imu_rate_hz);
+  if (imuRate !== null) {
+    items['imu_rate_hz'] = {
+      id: 'imu_rate_hz', label: 'IMU rate', value: String(imuRate), unit: 'Hz',
+      status: imuRate <= 0 ? 'bad' : imuRate < 10 ? 'warn' : 'ok', source: 'replay', t, derived: DERIVED_IMU_RATE
     };
   }
 

@@ -20,11 +20,12 @@
     "new-widget": "./scripts/new-widget.sh",
     "new-example": "tsx scripts/new-example.ts",
     "theme:reset": "tsx scripts/theme-reset.ts",
-    "test": "tsx src/assurance/domain/stateMachine.test.ts && tsx src/assurance/fusion/detector.test.ts && tsx src/assurance/fleet/FleetAggregator.test.ts && tsx src/assurance/sources/replay.test.ts && tsx src/assurance/api/routes.test.ts",
+    "test": "tsx src/assurance/domain/stateMachine.test.ts && tsx src/assurance/fusion/detector.test.ts && tsx src/assurance/fleet/FleetAggregator.test.ts && tsx src/assurance/sources/replay.test.ts && tsx src/assurance/alerts/AlertRule.test.ts && tsx src/assurance/incidents/replay.test.ts && tsx src/assurance/api/routes.test.ts && tsx src/assurance/ui/components.test.tsx && tsx src/assurance/api/http.test.ts",
     "harness:real": "tsx src/assurance/baseline/run_real_harness.ts",
     "test:widgets": "tsx scripts/test-widgets.ts",
     "test:schemas": "cd agent && uv run python -m pytest tests/ -v",
-    "check-a2a": "tsx a2a/compliance/check.ts"
+    "check-a2a": "tsx a2a/compliance/check.ts",
+    "harness:heldout": "tsx src/assurance/baseline/run_heldout_harness.ts"
   },
   "dependencies": {
     "@ag-ui/a2a-middleware": "0.0.2",
@@ -53,10 +54,14 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
+    "@types/jsdom": "^30.0.0",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "concurrently": "^9.1.2",
+    "jsdom": "^31.0.1",
     "lefthook": "^1.7.18",
     "tailwindcss": "^4",
     "tsx": "^4.19.2",

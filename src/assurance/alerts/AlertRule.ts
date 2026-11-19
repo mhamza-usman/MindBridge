@@ -1,10 +1,14 @@
+import { EvidenceSnapshot } from '../domain/types';
+
 export interface AlertRule {
   id: string;
   name: string;
   description: string;
   threshold: string;
   severity: 'info' | 'warning' | 'critical';
-  check: (evidence: any) => boolean;
+  /** Evidence item ids this rule needs. Any missing/null field raises an UNKNOWN-evidence alert, never a silent pass. */
+  fields: string[];
+  check: (evidence: EvidenceSnapshot) => boolean;
 }
 
 export interface Alert {
@@ -14,18 +18,40 @@ export interface Alert {
   description: string;
   severity: 'info' | 'warning' | 'critical';
   timestamp: number;
-  evidence: any;
+  evidence: EvidenceSnapshot;
   recommendedAction: string;
+  /** Set when the alert is about absent evidence rather than a violated threshold. */
+  kind?: 'violation' | 'unknown_evidence';
+  missingFields?: string[];
 }
 
 /** Maps an alert rule to the contract assumption it evidences (for click-through). */
 export const ALERT_TO_ASSUMPTION: Record<string, string> = {
   camera_stale: 'camera_age_ms',
   lidar_stale: 'lidar_age_ms',
-  sensors_disagree: 'sensors_agree',
-  calibration_invalid: 'calibration_valid'
+  sensors_disagree: 'sensors_agree'
   // perception_low / uncertainty_high have no contract row — they open Live view.
 };
+
+function num(e: EvidenceSnapshot, id: string): number | null {
+  const v = e.items[id]?.value;
+  if (v === undefined || v === null || v === '') return null;
+  const n = parseFloat(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function str(e: EvidenceSnapshot, id: string): string | null {
+  const v = e.items[id]?.value;
+  return v === undefined || v === null || v === '' ? null : v;
+}
+
+/** Fields a rule cannot evaluate because the evidence item is absent or empty. */
+export function missingFields(rule: AlertRule, e: EvidenceSnapshot): string[] {
+  return rule.fields.filter((f) => {
+    const item = e.items[f];
+    return !item || item.value === undefined || item.value === null || item.value === '';
+  });
+}
 
 export const ALERT_RULES: AlertRule[] = [
   {
@@ -34,7 +60,11 @@ export const ALERT_RULES: AlertRule[] = [
     description: 'Camera messages are stale',
     threshold: 'cam_age_ms > 200ms',
     severity: 'warning',
-    check: (e) => parseFloat(e.items['camera_age_ms']?.value || 0) > 200
+    fields: ['camera_age_ms'],
+    check: (e) => {
+      const v = num(e, 'camera_age_ms');
+      return v !== null && v > 200;
+    }
   },
   {
     id: 'lidar_stale',
@@ -42,7 +72,11 @@ export const ALERT_RULES: AlertRule[] = [
     description: 'LiDAR messages are stale',
     threshold: 'lidar_age_ms > 200ms',
     severity: 'warning',
-    check: (e) => parseFloat(e.items['lidar_age_ms']?.value || 0) > 200
+    fields: ['lidar_age_ms'],
+    check: (e) => {
+      const v = num(e, 'lidar_age_ms');
+      return v !== null && v > 200;
+    }
   },
   {
     id: 'sensors_disagree',
@@ -50,15 +84,8 @@ export const ALERT_RULES: AlertRule[] = [
     description: 'Camera and LiDAR disagree',
     threshold: 'sensors_agree == false',
     severity: 'critical',
-    check: (e) => e.items['sensors_agree']?.value === 'false'
-  },
-  {
-    id: 'calibration_invalid',
-    name: 'Calibration valid',
-    description: 'Calibration is invalid',
-    threshold: 'calibration_valid == false',
-    severity: 'critical',
-    check: (e) => e.items['calibration_valid']?.value === 'false'
+    fields: ['sensors_agree'],
+    check: (e) => str(e, 'sensors_agree') === 'false'
   },
   {
     id: 'perception_low',
@@ -66,7 +93,11 @@ export const ALERT_RULES: AlertRule[] = [
     description: 'Perception confidence is low',
     threshold: 'perception_pct < 70%',
     severity: 'warning',
-    check: (e) => parseFloat(e.items['perception_pct']?.value || 100) < 70
+    fields: ['perception_pct'],
+    check: (e) => {
+      const v = num(e, 'perception_pct');
+      return v !== null && v < 70;
+    }
   },
   {
     id: 'uncertainty_high',
@@ -74,32 +105,58 @@ export const ALERT_RULES: AlertRule[] = [
     description: 'System uncertainty is high',
     threshold: 'uncertainty_pct > 30%',
     severity: 'warning',
-    check: (e) => parseFloat(e.items['uncertainty_pct']?.value || 0) > 30
+    fields: ['uncertainty_pct'],
+    check: (e) => {
+      const v = num(e, 'uncertainty_pct');
+      return v !== null && v > 30;
+    }
   }
 ];
 
-export function checkAlerts(evidence: any, previousAlerts: Alert[]): Alert[] {
+const DEDUPE_MS = 10000;
+
+export function checkAlerts(evidence: EvidenceSnapshot, previousAlerts: Alert[]): Alert[] {
   const newAlerts: Alert[] = [];
   const now = Date.now();
 
+  const recentlyRaised = (key: string) =>
+    previousAlerts.some((a) => a.id.startsWith(key) && now - a.timestamp < DEDUPE_MS);
+
   for (const rule of ALERT_RULES) {
-    if (rule.check(evidence)) {
-      // Check if this alert was already raised in the last 10 seconds
-      const recent = previousAlerts.find(a => 
-        a.ruleId === rule.id && 
-        now - a.timestamp < 10000
-      );
-      
-      if (!recent) {
+    const missing = missingFields(rule, evidence);
+    if (missing.length > 0) {
+      // Unknown evidence: name the missing field(s). Never a silent pass.
+      const key = `unknown_evidence:${rule.id}`;
+      if (!recentlyRaised(key)) {
         newAlerts.push({
-          id: `${rule.id}_${now}`,
+          id: `${key}_${now}`,
+          ruleId: rule.id,
+          ruleName: `${rule.name} (unknown evidence)`,
+          description: `Cannot evaluate: missing evidence field(s): ${missing.join(', ')}`,
+          severity: 'info',
+          timestamp: now,
+          evidence,
+          recommendedAction: 'Check the evidence source; this check cannot run without the field.',
+          kind: 'unknown_evidence',
+          missingFields: missing
+        });
+      }
+      continue;
+    }
+
+    if (rule.check(evidence)) {
+      const key = `violation:${rule.id}`;
+      if (!recentlyRaised(key)) {
+        newAlerts.push({
+          id: `${key}_${now}`,
           ruleId: rule.id,
           ruleName: rule.name,
           description: rule.description,
           severity: rule.severity,
           timestamp: now,
-          evidence: evidence,
-          recommendedAction: getRecommendedAction(rule.id)
+          evidence,
+          recommendedAction: getRecommendedAction(rule.id),
+          kind: 'violation'
         });
       }
     }
@@ -116,8 +173,6 @@ function getRecommendedAction(ruleId: string): string {
       return 'LiDAR data is stale. Obstacle detection may be unreliable.';
     case 'sensors_disagree':
       return 'Camera and LiDAR disagree. Review before proceeding.';
-    case 'calibration_invalid':
-      return 'Calibration is invalid. Do not trust sensor fusion.';
     case 'perception_low':
       return 'Perception confidence is low. Slow down and monitor.';
     case 'uncertainty_high':

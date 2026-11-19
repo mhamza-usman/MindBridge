@@ -207,14 +207,14 @@ export function runRealDataHarness(lines: any[]): RealDataResults {
 
 // Per-frame scanners returning first detection index + reason (for fault runs).
 // `fromIdx` skips detections before the injected fault window.
-function thresholdScan(snaps: EvidenceSnapshot[], fromIdx = 0) {
+export function thresholdScan(snaps: EvidenceSnapshot[], fromIdx = 0) {
   for (let i = fromIdx; i < snaps.length; i++) {
     const bad = Object.values(snaps[i].items).find(it => it.status === 'bad');
     if (bad) return { idx: i, reason: `threshold breach: ${bad.id} = ${bad.value}` };
   }
   return { idx: -1, reason: '' };
 }
-function contractScan(snaps: EvidenceSnapshot[], fromIdx = 0) {
+export function contractScan(snaps: EvidenceSnapshot[], fromIdx = 0) {
   const contract = getDefaultContract();
   for (let i = fromIdx; i < snaps.length; i++) {
     const checks = evaluateContract(contract, snaps[i]);
@@ -223,7 +223,7 @@ function contractScan(snaps: EvidenceSnapshot[], fromIdx = 0) {
   }
   return { idx: -1, reason: '' };
 }
-function gateScan(snaps: EvidenceSnapshot[], fromIdx = 0) {
+export function gateScan(snaps: EvidenceSnapshot[], fromIdx = 0) {
   const contract = getDefaultContract();
   const sm = new AssuranceStateMachine();
   // The state machine must still see pre-fault frames to build correct state.
@@ -239,7 +239,7 @@ function gateScan(snaps: EvidenceSnapshot[], fromIdx = 0) {
   return { idx: -1, reason: '' };
 }
 
-function thresholdSummary(scan: { idx: number; reason: string }) {
+export function thresholdSummary(scan: { idx: number; reason: string }) {
   return {
     detectedIdx: scan.idx,
     ttdMs: scan.idx >= 0 ? scan.idx * 100 : null,
