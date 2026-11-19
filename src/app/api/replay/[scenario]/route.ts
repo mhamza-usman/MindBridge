@@ -26,23 +26,32 @@ export async function GET(
 
   const enc = new TextEncoder()
   let idx = 0
+  let iv: ReturnType<typeof setInterval> | undefined
 
   const stream = new ReadableStream({
     start(ctrl) {
-      const iv = setInterval(() => {
+      iv = setInterval(() => {
         // Loop replay continuously so monitoring feed stays live
         if (idx >= lines.length) {
           idx = 1; // skip t=0 startup frame on loop
         }
-        ctrl.enqueue(enc.encode(`data: ${lines[idx]}\n\n`))
+        try {
+          ctrl.enqueue(enc.encode(`data: ${lines[idx]}\n\n`))
+        } catch {
+          if (iv) clearInterval(iv)
+          return
+        }
         idx++
       }, 100)
 
       // Clean up on disconnect
       _req.signal.addEventListener('abort', () => {
-        clearInterval(iv)
+        if (iv) clearInterval(iv)
         try { ctrl.close() } catch { /* ignore */ }
       })
+    },
+    cancel() {
+      if (iv) clearInterval(iv)
     }
   })
 

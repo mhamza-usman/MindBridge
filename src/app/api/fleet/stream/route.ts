@@ -56,6 +56,7 @@ export const runtime = 'nodejs';
 
 export async function GET(_req: NextRequest) {
   const agg = getAggregator();
+  let unsub: (() => void) | undefined;
 
   const stream = new ReadableStream({
     start(controller) {
@@ -71,14 +72,17 @@ export async function GET(_req: NextRequest) {
 
       send(JSON.stringify(agg.getSnapshot()));
 
-      const unsub = agg.subscribe((snap) => {
+      unsub = agg.subscribe((snap) => {
         send(JSON.stringify(snap));
       });
 
       _req.signal.addEventListener('abort', () => {
-        unsub();
+        unsub?.();
         try { controller.close(); } catch { /* ignore */ }
       });
+    },
+    cancel() {
+      unsub?.();
     },
   });
 

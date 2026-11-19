@@ -25,27 +25,32 @@ export async function GET(
     const lines = telemetryData.trim().split('\n');
 
     const encoder = new TextEncoder();
+    let cancelled = false;
 
     const stream = new ReadableStream({
       async start(controller) {
         try {
           let idx = 0;
           // Loop continuously so the dashboard stays live
-          while (true) {
+          while (!cancelled) {
             if (idx >= lines.length) {
               idx = 1; // skip t=0 startup frame on loop
             }
-            controller.enqueue(encoder.encode(`data: ${lines[idx]}\n\n`));
+            try {
+              controller.enqueue(encoder.encode(`data: ${lines[idx]}\n\n`));
+            } catch {
+              break; // client disconnected
+            }
             idx++;
             await new Promise(resolve => setTimeout(resolve, 100)); // 100ms intervals
           }
         } catch (error) {
           console.error('Stream error:', error);
-          controller.error(error);
+          try { controller.error(error); } catch { /* already closed */ }
         }
       },
       cancel() {
-        // client disconnected
+        cancelled = true; // client disconnected
       },
     });
 
