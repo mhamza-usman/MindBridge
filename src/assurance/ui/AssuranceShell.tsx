@@ -19,6 +19,7 @@ import TelemetryLayout from "../telemetry/ui/TelemetryLayout";
 import DatasetImporter from "./DatasetImporter";
 import CameraWall from "./CameraWall";
 import { checkAlerts, Alert } from "../alerts/AlertRule";
+import { InterfaceSwitch } from "@/components/InterfaceSwitch";
 
 const STATE_COLORS: Record<AssuranceState, string> = {
   Autonomous: 'var(--auto)', Degraded: 'var(--deg)', Supervised: 'var(--sup)', Unknown: 'var(--unk)', Blocked: 'var(--blk)'
@@ -252,6 +253,7 @@ export default function AssuranceShell() {
             <i>{ICON[res.state]}</i><span>{res.state}</span>
           </span>
         )}
+        <InterfaceSwitch target="classic" />
       </header>
 
       <main className="v2-stage">
