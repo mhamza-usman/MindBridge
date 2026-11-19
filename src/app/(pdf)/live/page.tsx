@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, Suspense } from "react";
 import {
   A2UIProvider,
   A2UIRenderer,
@@ -53,7 +53,26 @@ const STATE_META: Record<
   emergency: { label: "EMERGENCY", color: "#7f1d1d", bg: "#fecaca" },
 };
 
-export default function LivePage() {
+import { useSearchParams } from "next/navigation";
+import AssuranceShell from "@/assurance/ui/AssuranceShell";
+
+function PageContent() {
+  const searchParams = useSearchParams();
+  const isV2 = searchParams.get("ui") === "v2" || process.env.NEXT_PUBLIC_UI_V2 === "true";
+
+  if (isV2) return <AssuranceShell />;
+  return <LivePage />;
+}
+
+export default function Page() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <PageContent />
+    </Suspense>
+  );
+}
+
+function LivePage() {
   const [running, setRunning] = useState(true);
   const [speedMs, setSpeedMs] = useState(1500);
   const [frame, setFrame] = useState<(Telemetry & { state: string }) | null>(

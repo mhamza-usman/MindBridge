@@ -8,6 +8,7 @@
 // Brand tints come from src/app/(pdf)/pdf-analyst.css (Seam #1).
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 import Link from "next/link";
+import { InterfaceSwitch } from "@/components/InterfaceSwitch";
 
 export function Logo({ size = 22 }: { size?: number }) {
   return (
@@ -57,6 +58,7 @@ export function SiteNav({
               {l.label}
             </Link>
           ))}
+          <InterfaceSwitch target="assurance" />
         </nav>
       </div>
     </header>

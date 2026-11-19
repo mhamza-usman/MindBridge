@@ -170,14 +170,3 @@ function ModeCard({
     </Link>
   );
 }
-
-function Spec({ k, v }: { k: string; v: string }) {
-  return (
-    <div className="surface-soft p-4">
-      <div className="mono text-[11px] uppercase tracking-[0.14em] text-[var(--muted-2)]">
-        {k}
-      </div>
-      <div className="mt-1 text-[13px] text-[var(--ink-2)]">{v}</div>
-    </div>
-  );
-}

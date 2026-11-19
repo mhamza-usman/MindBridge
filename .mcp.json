@@ -11,8 +11,7 @@
       "$comment": "Optional: A2UI v0.9 specification reference. Useful when authoring custom catalogs or debugging envelope shape errors. If a canonical server doesn't exist, leave disabled and reference https://a2ui.org/specification/v0.9-a2ui/ manually.",
       "type": "http",
       "url": "https://a2ui.org/mcp",
-      "description": "A2UI v0.9 specification lookup.",
-      "disabled": true
+      "description": "A2UI v0.9 specification lookup."
     }
   }
 }

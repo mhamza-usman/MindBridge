@@ -1,0 +1,90 @@
+"use client";
+import React, { useRef, useEffect, useState } from 'react';
+
+interface CameraData {
+  image_base64?: string | null;
+  width: number;
+  height: number;
+  has_image: boolean;
+  original_width?: number;
+  original_height?: number;
+}
+
+interface CameraViewProps {
+  data: CameraData;
+  width?: number;
+  height?: number;
+  label?: string;
+}
+
+export default function CameraView({ data, width = 400, height = 300, label }: CameraViewProps) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [lastImage, setLastImage] = useState<string | null>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // Clear canvas
+    ctx.fillStyle = '#1e293b';
+    ctx.fillRect(0, 0, width, height);
+
+    // If current frame has image, use it and cache it
+    if (data.has_image && data.image_base64) {
+      setLastImage(data.image_base64);
+      const img = new Image();
+      img.onload = () => {
+        ctx.drawImage(img, 0, 0, width, height);
+      };
+      img.src = `data:image/jpeg;base64,${data.image_base64}`;
+    } else if (lastImage) {
+      // If current frame has no image, show the last cached image
+      const img = new Image();
+      img.onload = () => {
+        ctx.drawImage(img, 0, 0, width, height);
+      };
+      img.src = `data:image/jpeg;base64,${lastImage}`;
+    } else {
+      // No image yet - show waiting status
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '14px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('Waiting for camera frame...', width / 2, height / 2);
+
+      ctx.font = '11px sans-serif';
+      ctx.fillStyle = '#94a3b8';
+      ctx.fillText('(Replay frames ~1 Hz)', width / 2, height / 2 + 20);
+    }
+
+    // Draw frame info
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    ctx.fillRect(10, 10, 180, 40);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '10px monospace';
+    ctx.fillText(data.has_image ? `Replay: ${data.original_width}x${data.original_height}` : lastImage ? 'Cached frame' : 'No data', 15, 25);
+    ctx.fillText('Source: NVIDIA r2b 2023', 15, 40);
+
+  }, [data, width, height, lastImage]);
+
+  return (
+    <div style={{ width, height, background: '#1e293b', borderRadius: '8px', padding: '12px', border: '1px solid #e5e7eb' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+        <h4 style={{ margin: 0, fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>
+          {label || 'Camera Feed'}
+        </h4>
+        <span style={{ fontSize: '11px', color: '#94a3b8' }}>
+          {data.has_image ? 'Replay (NVIDIA r2b)' : lastImage ? 'Cached frame' : 'No data'}
+        </span>
+      </div>
+      <canvas
+        ref={canvasRef}
+        width={width}
+        height={height - 45}
+        style={{ display: 'block' }}
+      />
+    </div>
+  );
+}

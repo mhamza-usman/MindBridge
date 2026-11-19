@@ -1,0 +1,854 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>MindBridge</title>
+<style>
+:root{
+  --ink:#1d1d1f; --ink2:#5f6470; --line:rgba(20,30,50,.10);
+  --glass:rgba(255,255,255,.74); --accent:#0a66ff;
+  --auto:#1e8e4e; --deg:#a15c00; --sup:#c2410c; --unk:#5b6472; --blk:#c4162a;
+  --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Inter,system-ui,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font-family:var(--font);color:var(--ink);font-size:13px;line-height:1.45;overflow:hidden;
+  background:#f4f7fc}
+.wall{position:fixed;inset:0;z-index:0;
+  background:
+   radial-gradient(60% 50% at 12% 8%,#cfe3ff 0,transparent 70%),
+   radial-gradient(50% 45% at 92% 15%,#ffe3d1 0,transparent 70%),
+   radial-gradient(55% 50% at 70% 100%,#dcd4ff 0,transparent 70%),
+   linear-gradient(#f6f9ff,#eef2fa)}
+.menubar{position:fixed;top:0;left:0;right:0;z-index:5;height:38px;padding:0 16px;padding-top:env(safe-area-inset-top,0px);
+  display:flex;align-items:center;gap:16px;background:rgba(255,255,255,.6);
+  backdrop-filter:blur(22px) saturate(180%);-webkit-backdrop-filter:blur(22px) saturate(180%);border-bottom:1px solid var(--line)}
+.menubar b{font-weight:650}
+.menubar .sp{flex:1}
+.menubar select{font:inherit;border:1px solid var(--line);background:rgba(255,255,255,.8);border-radius:7px;padding:3px 8px;color:var(--ink)}
+.badge{font-size:11px;padding:2px 8px;border-radius:99px;border:1px solid var(--line);background:#fff;color:var(--ink2)}
+.chip{--c:var(--auto);display:inline-flex;align-items:center;gap:6px;padding:3px 10px 3px 4px;border-radius:99px;font-weight:600;
+  color:var(--c);background:color-mix(in srgb,var(--c) 11%,#fff);border:1px solid color-mix(in srgb,var(--c) 30%,#fff)}
+.chip i{font-style:normal;width:18px;height:18px;border-radius:50%;display:grid;place-items:center;color:#fff;background:var(--c);font-size:11px}
+.chip[data-s=Unknown]{border-style:dashed}
+.chip[data-s=Unknown] i{background:#fff;color:var(--c);border:1.5px dashed var(--c)}
+[data-s=Autonomous]{--c:var(--auto)}[data-s=Degraded]{--c:var(--deg)}[data-s=Supervised]{--c:var(--sup)}
+[data-s=Unknown]{--c:var(--unk)}[data-s=Blocked]{--c:var(--blk)}
+
+#stage{position:fixed;inset:38px 0 0 0;z-index:1;padding:18px 18px 110px;overflow:auto}
+.view{display:none;grid-template-columns:repeat(12,1fr);gap:16px;max-width:1240px;margin:0 auto}
+.view.on{display:grid}
+.panel{background:var(--glass);backdrop-filter:blur(26px) saturate(170%);-webkit-backdrop-filter:blur(26px) saturate(170%);
+  border:1px solid rgba(255,255,255,.85);outline:1px solid var(--line);border-radius:20px;padding:16px 18px;
+  box-shadow:0 14px 40px rgba(30,50,90,.10),0 2px 6px rgba(30,50,90,.06)}
+.panel h2{font-size:14px;font-weight:650;margin-bottom:10px}
+.panel h3{font-size:12px;font-weight:600;color:var(--ink2);margin:10px 0 4px}
+.c4{grid-column:span 4}.c5{grid-column:span 5}.c6{grid-column:span 6}.c7{grid-column:span 7}.c8{grid-column:span 8}.c12{grid-column:span 12}
+@media(max-width:900px){.c4,.c5,.c6,.c7,.c8{grid-column:span 12}}
+
+.big{display:flex;align-items:center;gap:12px;margin-bottom:8px}
+.big .chip{font-size:20px;padding:6px 16px 6px 6px}.big .chip i{width:30px;height:30px;font-size:16px}
+.rec{padding:10px 12px;border-radius:12px;background:color-mix(in srgb,var(--c,var(--auto)) 8%,#fff);border:1px solid color-mix(in srgb,var(--c,var(--auto)) 22%,#fff);margin:8px 0}
+.why{list-style:none;counter-reset:w}
+.why li{position:relative;padding:5px 0 5px 22px;border-left:2px solid var(--line);margin-left:7px}
+.why li:before{content:"";position:absolute;left:-5px;top:11px;width:8px;height:8px;border-radius:50%;background:var(--c,var(--auto))}
+.btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+button.b{font:inherit;font-weight:600;padding:7px 12px;border-radius:10px;border:1px solid var(--line);background:#fff;color:var(--ink);cursor:pointer}
+button.b.p{background:var(--accent);border-color:var(--accent);color:#fff}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid rgba(10,102,255,.45);outline-offset:2px}
+.row{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--line)}
+.row:last-child{border-bottom:0}
+.row .n{flex:1}.row .v{font-family:var(--mono);font-size:12px;color:var(--ink2)}
+.st{--c:var(--auto);font-size:11px;font-weight:600;color:var(--c);min-width:74px;text-align:right}
+.st.warn{--c:var(--deg)}.st.bad{--c:var(--blk)}.st.unk{--c:var(--unk)}
+.bar{height:8px;border-radius:99px;background:rgba(20,30,50,.08);overflow:hidden;flex:1}
+.bar>span{display:block;height:100%;background:var(--accent);border-radius:99px;transition:width .3s}
+.modes{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
+.modes span{padding:3px 9px;border-radius:99px;font-size:11px;border:1px solid var(--line);color:var(--ink2);background:#fff}
+.modes span.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+svg text{font-family:var(--font);font-size:9px;fill:#5f6470}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.side{border:1px solid var(--line);border-radius:14px;padding:12px;background:rgba(255,255,255,.7)}
+.hyp{padding:10px 0;border-bottom:1px solid var(--line)}.hyp:last-child{border-bottom:0}
+.hyp .top{display:flex;gap:10px;align-items:center;margin-bottom:5px}.hyp .top b{flex:1}
+.checks{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+.checks span{font-size:11px;padding:2px 8px;border-radius:99px;border:1px solid var(--line);background:#fff}
+.checks .y{color:var(--auto);border-color:color-mix(in srgb,var(--auto) 35%,#fff)}
+.checks .n{color:var(--ink2);text-decoration:line-through}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line)}
+th{font-weight:600;color:var(--ink2);font-size:12px}
+input[type=range]{width:100%;accent-color:var(--accent)}
+.ev{font-family:var(--mono);font-size:12px;padding:6px 0;border-bottom:1px solid var(--line);color:var(--ink2)}
+.ev.on{color:var(--ink)}.ev.off{opacity:.35}.ev b{color:var(--ink)}
+.note{color:var(--ink2);font-size:12px}
+
+.dock{position:fixed;left:50%;bottom:calc(14px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:6;
+  display:flex;gap:10px;padding:8px 12px;border-radius:24px;background:rgba(255,255,255,.62);
+  backdrop-filter:blur(28px) saturate(190%);-webkit-backdrop-filter:blur(28px) saturate(190%);
+  border:1px solid rgba(255,255,255,.9);outline:1px solid var(--line);box-shadow:0 18px 50px rgba(30,50,90,.18)}
+.dock button{position:relative;width:52px;height:52px;border-radius:14px;border:1px solid var(--line);cursor:pointer;
+  background:linear-gradient(#fff,#eef2fa);display:grid;place-items:center;font-size:21px;transition:transform .16s ease}
+.dock button:hover{transform:translateY(-6px) scale(1.18)}
+.dock button.on:after{content:"";position:absolute;bottom:-7px;width:5px;height:5px;border-radius:50%;background:var(--ink)}
+.dock button[disabled]{opacity:.45;cursor:not-allowed}
+.dock button .tip{position:absolute;bottom:64px;left:50%;transform:translateX(-50%);white-space:nowrap;background:var(--ink);color:#fff;
+  font-size:11px;padding:3px 8px;border-radius:7px;opacity:0;pointer-events:none;transition:opacity .12s}
+.dock button:hover .tip,.dock button:focus-visible .tip{opacity:1}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}.dock button:hover{transform:none}}
+.cv{width:100%;height:auto;display:block;border-radius:14px;border:1px solid var(--line);background:#fff}
+.togs{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:8px;font-size:12px}
+.togs label{display:flex;gap:5px;align-items:center;cursor:pointer}
+.dz{border:1.5px dashed rgba(20,30,50,.25);border-radius:14px;padding:14px;text-align:center;background:rgba(255,255,255,.6)}
+.dz.on{border-color:var(--accent);background:rgba(10,102,255,.06)}
+pre{font-family:var(--mono);font-size:11px;overflow:auto;background:#fff;padding:10px;border-radius:10px;border:1px solid var(--line);white-space:pre-wrap}
+input[type=text]{font:inherit;padding:6px 9px;border-radius:9px;border:1px solid var(--line);flex:1;min-width:0}
+details summary{cursor:pointer;font-weight:600}
+.fgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;margin-top:8px}
+.fcard{border:1px solid var(--line);border-radius:14px;padding:12px;background:rgba(255,255,255,.7);cursor:pointer;transition:box-shadow .15s}
+.fcard:hover{box-shadow:0 4px 16px rgba(30,50,90,.12)}
+.fcard.alert{border-color:color-mix(in srgb,var(--c,var(--sup)) 40%,#fff);background:color-mix(in srgb,var(--c,var(--sup)) 5%,#fff)}
+.fcard .cid{font-weight:650;font-size:12px;margin-bottom:5px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.fcard .fmetrics{display:flex;gap:12px;margin-top:8px;font-size:11px;color:var(--ink2);flex-wrap:wrap}
+.fcard .fmetrics span{display:flex;flex-direction:column;gap:1px}
+.fcard .fmetrics b{font-size:12px;font-family:var(--mono);color:var(--ink)}
+.fbanner{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.ftl{max-height:200px;overflow-y:auto}
+.rrow{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--line);font-size:12px}
+.rrow:last-child{border-bottom:0}
+.rdot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+</style>
+</head>
+<body>
+<div class="wall"></div>
+
+<header class="menubar">
+  <b>MindBridge</b>
+  <span>Robot RB-07, warehouse aisle B pickup</span>
+  <span class="sp"></span>
+  <label for="scn" class="note">Scenario</label>
+  <select id="scn" aria-label="Demo scenario">
+    <option value="nominal">Nominal run</option>
+    <option value="stale">Stale camera</option>
+    <option value="conflict" selected>Camera and LiDAR conflict</option>
+    <option value="unknown">Evidence missing</option>
+  </select>
+  <span class="badge" title="Every value on this screen is scripted for the walkthrough">Synthetic demo data</span>
+  <span class="chip" id="hdrChip"><i></i><span></span></span>
+</header>
+
+<main id="stage">
+
+<!-- LIVE -->
+<section class="view on" id="v-live" aria-label="Live">
+  <div class="panel c5" id="statePanel">
+    <h2>Assurance state</h2>
+    <div class="big"><span class="chip" id="bigChip"><i></i><span></span></span></div>
+    <div class="rec" id="rec"></div>
+    <h3>Why</h3>
+    <ol class="why" id="why"></ol>
+    <div class="btns">
+      <button class="b p" data-act="Acknowledged">Acknowledge</button>
+      <button class="b" data-act="Escalated to supervisor">Escalate</button>
+      <button class="b" data-act="Operator decision logged">Log my decision</button>
+      <button class="b" data-act="Incident saved">Save incident</button>
+    </div>
+    <p class="note" id="actMsg" style="margin-top:8px" role="status">MindBridge only recommends. It never commands the robot.</p>
+  </div>
+
+  <div class="panel c7">
+    <h2>Floor map</h2>
+    <svg viewBox="0 0 420 220" width="100%" role="img" aria-label="Floor map with robot, goal and sensor coverage">
+      <rect x="6" y="6" width="408" height="208" rx="10" fill="#fff" stroke="rgba(20,30,50,.12)"/>
+      <g fill="#e8edf7"><rect x="30" y="30" width="150" height="34" rx="6"/><rect x="30" y="156" width="150" height="34" rx="6"/>
+        <rect x="230" y="30" width="150" height="34" rx="6"/><rect x="230" y="156" width="150" height="34" rx="6"/></g>
+      <text x="34" y="26">Rack A</text><text x="234" y="26">Rack B</text>
+      <rect id="polish" x="196" y="84" width="60" height="52" rx="8" fill="#fff4d6" stroke="#e5c56b" stroke-dasharray="4 3"/>
+      <text x="200" y="146">Polished floor</text>
+      <path d="M60 110 H330" stroke="#0a66ff" stroke-width="2" stroke-dasharray="5 4" fill="none"/>
+      <polygon id="cone" points="120,110 190,80 190,140" fill="rgba(10,102,255,.14)" stroke="#0a66ff" stroke-dasharray="3 3"/>
+      <g id="obst"><circle cx="228" cy="108" r="8" fill="none" stroke="#c4162a" stroke-width="2" stroke-dasharray="3 2"/>
+        <text x="214" y="96">Camera: object</text><text x="214" y="128">LiDAR: clear</text></g>
+      <circle cx="120" cy="110" r="9" fill="#0a66ff"/><text x="106" y="134">RB-07</text>
+      <circle cx="332" cy="110" r="7" fill="#1e8e4e"/><text x="318" y="98">Bin 42</text>
+    </svg>
+    <div class="note" id="mapNote"></div>
+  </div>
+
+  <div class="panel c6">
+    <h2>Evidence</h2><div id="evList"></div>
+  </div>
+
+  <div class="panel c6">
+    <h2>NeSyConf (existing engine)</h2>
+    <div id="nesy"></div>
+    <h3>Current NeSyConf mode</h3>
+    <div class="modes" id="modes"></div>
+    <p class="note" style="margin-top:8px">The NeSyConf mode is one input to the assurance state. It is not replaced.</p>
+  </div>
+</section>
+
+<!-- FUSION -->
+<section class="view" id="v-fusion" aria-label="Sensor fusion">
+  <div class="panel c12">
+    <h2>Sensor fusion check</h2>
+    <p class="note" id="fuSummary"></p>
+    <div class="two" style="margin-top:12px">
+      <div class="side"><h3 style="margin-top:0">Camera</h3><div id="fuCam"></div></div>
+      <div class="side"><h3 style="margin-top:0">LiDAR</h3><div id="fuLid"></div></div>
+    </div>
+  </div>
+  <div class="panel c8">
+    <h2>Likely causes, ranked</h2>
+    <p class="note">Score is how many evidence checks match. It is not a probability.</p>
+    <div id="hyps"></div>
+  </div>
+  <div class="panel c4">
+    <h2>What to check next</h2>
+    <div id="fuNext"></div>
+    <h3>What MindBridge cannot tell</h3>
+    <p class="note" id="fuGap"></p>
+  </div>
+</section>
+
+<!-- CONTRACT -->
+<section class="view" id="v-contract" aria-label="Contract">
+  <div class="panel c12">
+    <h2>Autonomy contract: warehouse navigation</h2>
+    <table><thead><tr><th>Assumption</th><th>Limit</th><th>Now</th><th>Status</th></tr></thead><tbody id="ctBody"></tbody></table>
+    <p class="note" style="margin-top:10px">Precedence when several apply: Blocked, Unknown, Supervised, Degraded, Autonomous. Recovery needs evidence to stay valid for 10 seconds.</p>
+  </div>
+</section>
+
+<!-- REPLAY -->
+<section class="view" id="v-replay" aria-label="Incident replay">
+  <div class="panel c12">
+    <h2>Incident replay</h2>
+    <div class="row"><button class="b" id="play">Play</button><input type="range" id="scrub" min="0" max="100" value="100" aria-label="Replay position"><span class="v" id="tnow">0.0 s</span></div>
+    <div id="evlog"></div>
+  </div>
+</section>
+
+<!-- SOURCES -->
+<section class="view" id="v-sources" aria-label="Sources">
+  <div class="panel c12">
+    <h2>Evidence sources</h2>
+    <div class="row"><span class="n">Synthetic scenarios</span><span class="st">Connected</span></div>
+    <div class="row"><span class="n">Recorded ROS2 bag (MCAP replay)</span><span class="st unk">Not connected</span></div>
+    <div class="row"><span class="n">Live ROS2 monitor</span><span class="st unk">Not connected</span></div>
+    <div class="row"><span class="n">CASSANDRA acoustic plugin</span><span class="st unk">Later</span></div>
+    <p class="note" style="margin-top:10px">Fleet view is now active on synthetic data. Live sources connect via the fleet aggregator WebSocket.</p>
+  </div>
+</section>
+
+<!-- LIDAR -->
+<section class="view" id="v-lidar" aria-label="LiDAR map">
+  <div class="panel c8">
+    <h2>LiDAR polar scan</h2>
+    <div class="togs">
+      <label><input type="checkbox" id="lgRays" checked> Scan rays</label>
+      <label><input type="checkbox" id="lgWalls" checked> Detected walls</label>
+      <label><input type="checkbox" id="lgCam" checked> Camera conflict zone</label>
+      <label><input type="checkbox" id="lgFloor" checked> Floor zones</label>
+    </div>
+    <canvas id="lidarCv" width="520" height="420" class="cv" aria-label="LiDAR polar scan"></canvas>
+    <p class="note" id="lidarNote" style="margin-top:8px"></p>
+  </div>
+  <div class="panel c4">
+    <h2>Scan statistics</h2>
+    <div id="lidarStats"></div>
+    <h3>Returns per sector</h3>
+    <canvas id="lidarBar" width="260" height="100" class="cv"></canvas>
+    <h3>What this view shows</h3>
+    <p class="note">Top-down polar scan. Each ray is one LiDAR beam. Return distance sets ray length; closer returns are brighter. The orange zone marks where the camera reported an object but LiDAR returned nothing.</p>
+  </div>
+</section>
+
+<!-- CAMERA -->
+<section class="view" id="v-camera" aria-label="Camera view">
+  <div class="panel c8">
+    <h2>Camera view</h2>
+    <div class="togs">
+      <label><input type="checkbox" id="cgDetect" checked> Detection overlay</label>
+      <label><input type="checkbox" id="cgExpose" checked> Exposure heat map</label>
+      <label><input type="checkbox" id="cgGrid" checked> Depth grid</label>
+    </div>
+    <canvas id="camCv" width="640" height="360" class="cv" aria-label="Simulated camera feed"></canvas>
+    <p class="note" id="camNote" style="margin-top:8px">Simulated frame. Source badge applies.</p>
+  </div>
+  <div class="panel c4">
+    <h2>Frame diagnostics</h2>
+    <div id="camStats"></div>
+    <h3>Exposure histogram</h3>
+    <canvas id="camHist" width="260" height="80" class="cv"></canvas>
+    <h3>What saturated pixels mean</h3>
+    <p class="note">When the camera exposure clips (histogram piles up at 255), bright floor patches register as opaque obstacles. LiDAR does not see them because they are specular reflections, not physical surfaces.</p>
+  </div>
+</section>
+
+<!-- PLOTS -->
+<section class="view" id="v-plots" aria-label="Sensor plots">
+  <div class="panel c12">
+    <h2>Sensor time series</h2>
+    <div class="togs" style="justify-content:space-between">
+      <div style="display:flex;gap:14px;flex-wrap:wrap">
+        <label><input type="checkbox" id="plCamAge" checked> Camera age (ms)</label>
+        <label><input type="checkbox" id="plLidAge" checked> LiDAR age (ms)</label>
+        <label><input type="checkbox" id="plPerc" checked> Perception %</label>
+        <label><input type="checkbox" id="plUnc" checked> Uncertainty %</label>
+        <label><input type="checkbox" id="plPlan" checked> Plan certainty %</label>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="b" id="plotPause">Pause</button>
+        <button class="b" id="plotClear">Clear</button>
+      </div>
+    </div>
+    <canvas id="plotCv" width="1160" height="280" class="cv" aria-label="Sensor time series chart"></canvas>
+    <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;font-size:11px">
+      <span style="color:#0a66ff">-  Camera age</span>
+      <span style="color:#e5850a">-  LiDAR age</span>
+      <span style="color:#1e8e4e">-  Perception</span>
+      <span style="color:#c4162a">-  Uncertainty</span>
+      <span style="color:#7c3aed">-  Plan certainty</span>
+      <span class="note">Limit lines: camera 200 ms (blue dash), LiDAR 200 ms (orange dash)</span>
+    </div>
+  </div>
+  <div class="panel c6">
+    <h2>Freshness histogram (last 60 s)</h2>
+    <canvas id="freshHist" width="560" height="120" class="cv"></canvas>
+  </div>
+  <div class="panel c6">
+    <h2>NeSyConf radar</h2>
+    <canvas id="radarCv" width="340" height="220" class="cv" aria-label="NeSyConf radar chart"></canvas>
+  </div>
+</section>
+
+<!-- DATA INPUT -->
+<section class="view" id="v-input" aria-label="Data input">
+  <div class="panel c6">
+    <h2>Manual evidence override</h2>
+    <p class="note" style="margin-bottom:10px">Override individual evidence values. Affects all views. Reset to scenario restores scripted data.</p>
+    <div id="manualFields"></div>
+    <div class="btns" style="margin-top:12px">
+      <button class="b p" id="applyManual">Apply</button>
+      <button class="b" id="resetManual">Reset to scenario</button>
+    </div>
+    <p class="note" id="manualMsg" style="margin-top:8px"></p>
+  </div>
+  <div class="panel c6">
+    <h2>Paste JSON evidence</h2>
+    <p class="note" style="margin-bottom:8px">Paste a MindBridge evidence snapshot or a single evidence event. Fields matched by id will override the active scenario.</p>
+    <textarea id="jsonPaste" rows="10" style="width:100%;font:12px/1.5 var(--mono);padding:10px;border-radius:12px;border:1px solid var(--line);resize:vertical" placeholder='{"camera_age_ms":95,"lidar_age_ms":72,"battery_pct":78}'></textarea>
+    <div class="btns" style="margin-top:8px">
+      <button class="b p" id="parseJson">Parse and apply</button>
+      <button class="b" id="clearJson">Clear</button>
+    </div>
+    <pre id="jsonOut" style="margin-top:8px;max-height:100px"></pre>
+  </div>
+  <div class="panel c12">
+    <h2>File drop (replay or CSV)</h2>
+    <div class="dz" id="dropZone" tabindex="0" role="button" aria-label="Drop a file here">
+      <p style="font-size:22px;margin-bottom:6px">⌁</p>
+      <p>Drop a JSONL replay file, CSV, or ROS2 bag export here</p>
+      <p class="note" style="margin-top:4px">Accepted: .jsonl, .json, .csv - max 5 MB. Parsed client-side only, never uploaded.</p>
+    </div>
+    <pre id="fileOut" style="margin-top:10px;max-height:180px;display:none"></pre>
+    <div id="fileRows" style="margin-top:10px"></div>
+  </div>
+</section>
+
+<!-- FLEET -->
+<section class="view" id="v-fleet" aria-label="Fleet">
+  <div class="panel c12" id="fleetBannerPanel">
+    <div id="fleetBanner"></div>
+  </div>
+  <div class="panel c8">
+    <h2>Fleet: warehouse aisle operations</h2>
+    <p class="note">8 robots. States computed independently per robot. Click a card to inspect that robot in the Live view. Synthetic demo data.</p>
+    <div class="fgrid" id="robotCards"></div>
+  </div>
+  <div class="panel c4">
+    <h2>Rollout control</h2>
+    <p class="note" style="margin-bottom:8px">Firmware v2.4.0 to v2.4.1 in progress. MindBridge flagged anomalies on updated robots. Halt or continue is your call.</p>
+    <div id="rolloutStatus"></div>
+    <div class="btns" style="margin-top:10px">
+      <button class="b" id="haltBtn" style="border-color:#c4162a;color:#c4162a">Halt rollout</button>
+      <button class="b" id="resumeBtn" disabled>Resume rollout</button>
+    </div>
+    <p class="note" id="rolloutMsg" style="margin-top:8px">MindBridge flags the anomaly. The halt decision is yours. Action logged, no robot is touched.</p>
+    <h3>Fleet event log</h3>
+    <div class="ftl" id="fleetLog"></div>
+  </div>
+</section>
+</main>
+
+<nav class="dock" aria-label="Views">
+  <button data-v="live" class="on" aria-label="Live"><span aria-hidden="true">◉</span><span class="tip">Live</span></button>
+  <button data-v="fusion" aria-label="Fusion"><span aria-hidden="true">⇄</span><span class="tip">Sensor fusion</span></button>
+  <button data-v="lidar" aria-label="LiDAR"><span aria-hidden="true">◎</span><span class="tip">LiDAR map</span></button>
+  <button data-v="camera" aria-label="Camera"><span aria-hidden="true">⬡</span><span class="tip">Camera view</span></button>
+  <button data-v="plots" aria-label="Plots"><span aria-hidden="true">∿</span><span class="tip">Sensor plots</span></button>
+  <button data-v="input" aria-label="Data input"><span aria-hidden="true">⌨</span><span class="tip">Data input</span></button>
+  <button data-v="contract" aria-label="Contract"><span aria-hidden="true">☰</span><span class="tip">Contract</span></button>
+  <button data-v="replay" aria-label="Replay"><span aria-hidden="true">↺</span><span class="tip">Replay</span></button>
+  <button data-v="fleet" aria-label="Fleet"><span aria-hidden="true">▦</span><span class="tip">Fleet</span></button>
+</nav>
+
+<script>
+const ICON={Autonomous:'✓',Degraded:'!',Supervised:'👁',Unknown:'?',Blocked:'■'};
+const MODES=['Autonomous','Monitoring','Advisory','Intervention','Emergency'];
+const CONTRACT=[['Camera freshness','< 200 ms'],['LiDAR freshness','< 200 ms'],['TF age','< 500 ms'],['Localization std dev','< 5 cm'],['Battery reserve','> 20 %'],['Calibration valid','yes'],['Camera and LiDAR agree','yes']];
+const H=(n,c,m)=>({n,c,m}); // hypothesis: name, checks [[text,met]], 
+const SC={
+ nominal:{state:'Autonomous',mode:0,rec:'Continue autonomous operation.',
+  why:['Camera, LiDAR and TF are fresh','Localization inside the 5 cm limit','Camera and LiDAR agree','Uncertainty inside the calibrated bound'],
+  ev:[['Camera freshness','80 ms','ok'],['LiDAR freshness','60 ms','ok'],['TF age','45 ms','ok'],['Localization std dev','3.2 cm','ok'],['Battery reserve','78 %','ok'],['Calibration','12 days old','ok']],
+  nesy:[['Perception',92],['Plan certainty',90],['Task success',95],['System uncertainty',8]],
+  ct:['80 ms','60 ms','45 ms','3.2 cm','78 %','yes','yes'],cts:['ok','ok','ok','ok','ok','ok','ok'],
+  map:{cone:1,obst:0,note:'Sensors agree. No conflicts.'},
+  fu:{sum:'Camera and LiDAR agree on the scene. No conflict to explain.',cam:['Objects in view: 0 in path','Exposure: normal','Sharpness: normal'],lid:['Points in path: 0','Return intensity: normal','Sync skew: 4 ms'],hyp:[],next:['Nothing to check.'],gap:'Nothing outstanding.'},
+  log:[[0,'Mission started'],[20,'All contract checks pass'],[40,'Reached Bin 42']]},
+ stale:{state:'Supervised',mode:2,rec:'Request operator review. Camera data is stale and perception confidence has dropped.',
+  why:['Camera freshness is 450 ms, limit is 200 ms','Perception confidence fell to 68 %','Planner is working from old camera frames','Contract needs more certainty than the evidence gives'],
+  ev:[['Camera freshness','450 ms','bad'],['LiDAR freshness','120 ms','ok'],['TF age','45 ms','ok'],['Localization std dev','3.2 cm','ok'],['Battery reserve','78 %','ok'],['Calibration','12 days old','ok']],
+  nesy:[['Perception',68],['Plan certainty',61],['Task success',70],['System uncertainty',41]],
+  ct:['450 ms','120 ms','45 ms','3.2 cm','78 %','yes','not comparable'],cts:['bad','ok','ok','ok','ok','ok','unk'],
+  map:{cone:0,obst:0,note:'Camera coverage is stale. LiDAR still fresh.'},
+  fu:{sum:'Cannot compare camera with LiDAR because the camera frames are old. The fault is staleness, not disagreement.',cam:['Last frame: 450 ms ago','Topic rate: 6 Hz, expected 30 Hz','QoS: reliability mismatch flagged'],lid:['Points in path: 0','Return intensity: normal','Sync skew: n/a'],
+   hyp:[H('Camera topic degraded (QoS or network)',[['Topic rate below 50 % of expected',1],['QoS mismatch flagged',1],['LiDAR topic healthy',1],['CPU saturated',0]])],
+   next:['Check publisher and subscriber QoS on the camera topic.','Compare network latency on the camera link.'],gap:'Why the rate dropped. Only topic data is available, not the network itself.'},
+  log:[[0,'Mission started'],[10,'Camera freshness 450 ms, limit 200 ms'],[11,'Autonomous to Degraded'],[35,'Still violated, Degraded to Supervised'],[43,'Operator accepted handover'],[54,'Camera fresh again']]},
+ conflict:{state:'Supervised',mode:2,rec:'Request operator review. Camera sees an object at 3.2 m that LiDAR does not. Slow down near the polished zone.',
+  why:['Camera reports an object at 3.2 m, 1.5 m left','LiDAR reports clear space at the same spot','Camera exposure is saturated in that floor region','Best match: glare on a polished floor. Not certain.'],
+  ev:[['Camera freshness','90 ms','ok'],['LiDAR freshness','70 ms','ok'],['TF age','45 ms','ok'],['Localization std dev','3.4 cm','ok'],['Sensor agreement','Conflict at 3.2 m','bad'],['Calibration','12 days old','ok']],
+  nesy:[['Perception',71],['Plan certainty',66],['Task success',74],['System uncertainty',36]],
+  ct:['90 ms','70 ms','45 ms','3.4 cm','78 %','yes','no'],cts:['ok','ok','ok','ok','ok','ok','bad'],
+  map:{cone:1,obst:1,note:'Conflict at 3.2 m, next to the polished floor zone.'},
+  fu:{sum:'Camera and LiDAR disagree about one object. Checked four possible causes against the evidence.',
+   cam:['Object at 3.2 m, 1.5 m left','Exposure saturated in floor region','Specular patch overlaps the object'],lid:['No return at that location','Return intensity: normal','Sync skew: 6 ms'],
+   hyp:[H('Glare on polished floor (camera false positive)',[['Exposure saturated in region',1],['Bright patch overlaps object',1],['Floor marked polished in map',1],['LiDAR returns clean',1],['Object absent in earlier frames',0]]),
+        H('Lens dust or partial blockage',[['Image sharpness low',0],['LiDAR intensity dropped',0],['Blur increasing over minutes',1]]),
+        H('Camera to LiDAR calibration drift',[['Calibration older than 30 days',0],['Same offset on other objects',0],['Recent bump or vibration event',1]]),
+        H('Real object the LiDAR missed (glass, thin edge)',[['Object present in 3 earlier frames',0],['Shape matches a known item',0],['Height below LiDAR plane',1]])],
+   next:['Capture a second frame at lower exposure.','Slow to 0.3 m/s through the polished zone.','Run one LiDAR-only pass over the same spot.'],
+   gap:'MindBridge cannot see the object. If the checks stay split, it will say Unknown, not pick a cause.'},
+  log:[[0,'Mission started'],[12,'Camera object at 3.2 m, LiDAR clear'],[13,'Autonomous to Degraded'],[14,'Glare ranked first, 4 of 5 checks'],[30,'Still unresolved, Degraded to Supervised'],[41,'Operator slowed robot and confirmed glare']]},
+ unknown:{state:'Unknown',mode:3,rec:'Request operator review. Not enough valid evidence to judge the mission.',
+  why:['LiDAR stream missing for 2.4 s','Camera frames stale','Calibration is out of date','MindBridge will not guess']},
+};
+SC.unknown={...SC.unknown,
+  ev:[['Camera freshness','1.9 s','bad'],['LiDAR freshness','no data','unk'],['TF age','45 ms','ok'],['Localization std dev','no data','unk'],['Battery reserve','78 %','ok'],['Calibration','41 days old','bad']],
+  nesy:[['Perception',0],['Plan certainty',0],['Task success',0],['System uncertainty',100]],
+  ct:['1.9 s','no data','45 ms','no data','78 %','expired','not comparable'],cts:['bad','unk','ok','unk','ok','bad','unk'],
+  map:{cone:0,obst:0,note:'No valid sensor coverage.'},
+  fu:{sum:'Cannot compare sensors. Both streams are missing or stale.',cam:['Last frame: 1.9 s ago'],lid:['No scan for 2.4 s'],hyp:[],next:['Restore at least one sensor stream.','Recalibrate before resuming autonomy.'],gap:'Everything. There is no valid evidence to reason from.'},
+  log:[[0,'Mission started'],[8,'LiDAR stream lost'],[9,'Calibration expired'],[10,'State set to Unknown'],[38,'Operator took over']]};
+
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+let cur='conflict';
+const cls={ok:'',warn:'warn',bad:'bad',unk:'unk'}, word={ok:'Within limit',warn:'Watch',bad:'Violated',unk:'No data'};
+
+function chip(el,s){el.dataset.s=s;el.querySelector('i').textContent=ICON[s];el.querySelector('span').textContent=s}
+function render(){
+  const d=SC[cur];
+  chip($('#hdrChip'),d.state);chip($('#bigChip'),d.state);
+  $('#statePanel').dataset.s=d.state;$('#rec').style.setProperty('--c',`var(--${({Autonomous:'auto',Degraded:'deg',Supervised:'sup',Unknown:'unk',Blocked:'blk'})[d.state]})`);
+  $('#statePanel').style.setProperty('--c',$('#rec').style.getPropertyValue('--c'));
+  $('#rec').textContent=d.rec;
+  $('#why').innerHTML=d.why.map(t=>`<li>${t}</li>`).join('');
+  $('#evList').innerHTML=d.ev.map(e=>`<div class="row"><span class="n">${e[0]}</span><span class="v">${e[1]}</span><span class="st ${cls[e[2]]}">${word[e[2]]}</span></div>`).join('');
+  $('#nesy').innerHTML=d.nesy.map(n=>`<div class="row"><span class="n" style="min-width:130px;flex:none">${n[0]}</span><div class="bar"><span style="width:${n[1]}%"></span></div><span class="v" style="min-width:36px;text-align:right">${n[1]}%</span></div>`).join('');
+  $('#modes').innerHTML=MODES.map((m,i)=>`<span class="${i===d.mode?'on':''}">${m}</span>`).join('');
+  $('#cone').style.display=d.map.cone?'':'none';$('#obst').style.display=d.map.obst?'':'none';$('#polish').style.display=(cur==='conflict')?'':'none';
+  $('#mapNote').textContent=d.map.note;
+  $('#ctBody').innerHTML=CONTRACT.map((c,i)=>`<tr><td>${c[0]}</td><td>${c[1]}</td><td class="v">${d.ct[i]}</td><td><span class="st ${cls[d.cts[i]]}" style="text-align:left">${word[d.cts[i]]}</span></td></tr>`).join('');
+  const f=d.fu;$('#fuSummary').textContent=f.sum;
+  $('#fuCam').innerHTML=f.cam.map(t=>`<div class="row">${t}</div>`).join('');
+  $('#fuLid').innerHTML=f.lid.map(t=>`<div class="row">${t}</div>`).join('');
+  $('#hyps').innerHTML=f.hyp.length?f.hyp.map((h,i)=>{const m=h.c.filter(x=>x[1]).length,t=h.c.length;
+    return `<div class="hyp"><div class="top"><b>${i+1}. ${h.n}</b><span class="v">${m} of ${t} checks</span></div><div class="bar"><span style="width:${m/t*100}%"></span></div><div class="checks">${h.c.map(x=>`<span class="${x[1]?'y':'n'}">${x[1]?'✓ ':''}${x[0]}</span>`).join('')}</div></div>`}).join(''):'<p class="note">No cause to rank.</p>';
+  $('#fuNext').innerHTML=f.next.map(t=>`<div class="row">${t}</div>`).join('');
+  $('#fuGap').textContent=f.gap;
+  $('#actMsg').textContent='MindBridge only recommends. It never commands the robot.';
+  const mx=d.log[d.log.length-1][0];$('#scrub').max=mx;$('#scrub').value=mx;drawLog();
+}
+function drawLog(){const d=SC[cur],t=+$('#scrub').value;$('#tnow').textContent=t.toFixed(1)+' s';
+  $('#evlog').innerHTML=d.log.map(e=>`<div class="ev ${e[0]<=t?'on':'off'}"><b>${e[0].toFixed(1)} s</b>  ${e[1]}</div>`).join('')}
+$('#scn').onchange=e=>{cur=e.target.value;render()};
+$$('.dock button[data-v]').forEach(b=>b.onclick=()=>{
+  $$('.dock button').forEach(x=>x.classList.remove('on'));b.classList.add('on');
+  $$('.view').forEach(v=>v.classList.remove('on'));$('#v-'+b.dataset.v).classList.add('on')});
+$$('[data-act]').forEach(b=>b.onclick=()=>{$('#actMsg').textContent=b.dataset.act+' at '+new Date().toLocaleTimeString()+'. Logged only, robot not touched.'});
+$('#scrub').oninput=drawLog;
+let tm=null;$('#play').onclick=()=>{
+  if(tm){clearInterval(tm);tm=null;$('#play').textContent='Play';return}
+  const s=$('#scrub');if(+s.value>=+s.max)s.value=0;$('#play').textContent='Pause';
+  tm=setInterval(()=>{s.value=Math.min(+s.max,+s.value+0.5);drawLog();if(+s.value>=+s.max){clearInterval(tm);tm=null;$('#play').textContent='Play'}},100)};
+render();
+
+/* ---- LIDAR ---- */
+const LIDAR_NOTE={nominal:'Clean scan. All 360 sectors returning. No conflicts.',stale:'LiDAR still healthy. Camera is stale so the two cannot be compared.',conflict:'LiDAR returns clear in the zone where camera reports an object at 3.2 m.',unknown:'Scan data missing for 2.4 s. No valid coverage.'};
+const LIDAR_STATS={nominal:[['Scan rate','30 Hz'],['Valid returns','2880 / 2880'],['Max range','10.0 m'],['Conflict zones','0']],stale:[['Scan rate','30 Hz'],['Valid returns','2880 / 2880'],['Max range','10.0 m'],['Conflict zones','n/a (camera stale)']],conflict:[['Scan rate','30 Hz'],['Valid returns','2879 / 2880'],['Max range','10.0 m'],['Conflict zones','1 (at 3.2 m)']],unknown:[['Scan rate','0 Hz'],['Valid returns','0 / 2880'],['Max range','n/a'],['Conflict zones','n/a']]};
+function drawLidar(){
+  const cv=document.getElementById('lidarCv'),cx=cv.getContext('2d'),W=cv.width,H=cv.height,R=Math.min(W,H)/2-20,cx0=W/2,cy0=H/2;
+  const rays=$('#lgRays').checked, walls=$('#lgWalls').checked, camZ=$('#lgCam').checked, floor=$('#lgFloor').checked;
+  cx.clearRect(0,0,W,H);
+  // background
+  const bg=cx.createRadialGradient(cx0,cy0,0,cx0,cy0,R);bg.addColorStop(0,'#1a1e2e');bg.addColorStop(1,'#0d0f1a');
+  cx.fillStyle=bg;cx.beginPath();cx.arc(cx0,cy0,R+16,0,Math.PI*2);cx.fill();
+  // grid rings
+  cx.strokeStyle='rgba(255,255,255,.08)';cx.lineWidth=1;
+  [0.25,0.5,0.75,1].forEach(f=>{cx.beginPath();cx.arc(cx0,cy0,R*f,0,Math.PI*2);cx.stroke()});
+  // grid lines
+  for(let a=0;a<360;a+=45){const rad=a*Math.PI/180;cx.beginPath();cx.moveTo(cx0,cy0);cx.lineTo(cx0+Math.cos(rad)*R,cy0+Math.sin(rad)*R);cx.stroke()}
+  // floor polished zone (conflict scenario)
+  if(floor&&cur==='conflict'){cx.fillStyle='rgba(255,180,50,.12)';cx.beginPath();cx.arc(cx0,cy0,R*0.6,-.3,.3);cx.lineTo(cx0,cy0);cx.fill();
+    cx.strokeStyle='rgba(255,180,50,.4)';cx.lineWidth=1.5;cx.beginPath();cx.arc(cx0,cy0,R*0.6,-.3,.3);cx.stroke()}
+  // scan rays
+  if(rays&&cur!=='unknown'){
+    const isBad=cur==='conflict';
+    for(let a=0;a<360;a+=2){
+      const rad=(a-90)*Math.PI/180;
+      // walls at racks (~65-115 and 245-295 deg)
+      let dist=1.0;
+      if((a>60&&a<120)||(a>240&&a<300))dist=0.38+Math.sin((a-90)*Math.PI/30)*0.06+Math.random()*0.01;
+      else if(a>150&&a<210)dist=0.75+Math.sin(a*0.1)*0.04; // back wall
+      else dist=0.82+Math.sin(a*0.07)*0.08+Math.random()*0.01;
+      // conflict zone: camera sees something but LiDAR returns clear
+      const inConflict=isBad&&(a>350||a<10);
+      if(inConflict)dist=0.98;
+      const bright=0.4+0.5*(1-dist);
+      cx.strokeStyle=isBad&&inConflict?'rgba(255,100,60,.5)':`rgba(50,200,120,${bright})`;
+      cx.lineWidth=1;cx.beginPath();cx.moveTo(cx0,cy0);cx.lineTo(cx0+Math.cos(rad)*R*dist,cy0+Math.sin(rad)*R*dist);cx.stroke();
+      if(walls){cx.fillStyle=cx.strokeStyle;cx.beginPath();cx.arc(cx0+Math.cos(rad)*R*dist,cy0+Math.sin(rad)*R*dist,1.5,0,Math.PI*2);cx.fill()}
+    }
+  } else if(cur==='unknown'){
+    // degraded: scattered sparse rays
+    for(let a=0;a<360;a+=8){const rad=(a-90)*Math.PI/180,d=0.4+Math.random()*0.4;
+      cx.strokeStyle='rgba(90,100,120,.5)';cx.lineWidth=1;cx.beginPath();cx.moveTo(cx0,cy0);cx.lineTo(cx0+Math.cos(rad)*R*d,cy0+Math.sin(rad)*R*d);cx.stroke()}
+    cx.fillStyle='rgba(255,255,255,.6)';cx.font='bold 14px system-ui';cx.textAlign='center';cx.fillText('No scan data',cx0,cy0+4);}
+  // camera conflict zone overlay
+  if(camZ&&cur==='conflict'){const rad=(-90)*Math.PI/180,r1=R*.25,r2=R*.42;
+    cx.strokeStyle='rgba(255,120,30,1)';cx.lineWidth=2;cx.setLineDash([4,3]);cx.beginPath();cx.arc(cx0,cy0,(r1+r2)/2,rad-.12,rad+.12);cx.stroke();cx.setLineDash([]);
+    cx.fillStyle='rgba(255,120,30,.18)';cx.beginPath();cx.arc(cx0,cy0,(r1+r2)/2+6,rad-.14,rad+.14);cx.lineTo(cx0,cy0);cx.fill();
+    cx.fillStyle='rgba(255,150,50,1)';cx.font='10px system-ui';cx.textAlign='center';cx.fillText('Camera: object here',cx0+Math.cos(rad)*(r1+r2)/2*1.05,cy0+Math.sin(rad)*(r1+r2)/2*1.05-10)}
+  // robot dot
+  cx.fillStyle='#0a66ff';cx.beginPath();cx.arc(cx0,cy0,7,0,Math.PI*2);cx.fill();
+  cx.fillStyle='#fff';cx.font='bold 11px system-ui';cx.textAlign='center';cx.textBaseline='middle';cx.fillText('R',cx0,cy0);
+  // range labels
+  cx.fillStyle='rgba(255,255,255,.35)';cx.font='9px system-ui';cx.textAlign='left';cx.textBaseline='top';
+  ['2.5m','5m','7.5m','10m'].forEach((l,i)=>{cx.fillText(l,cx0+R*(i+1)*.25+3,cy0+2)});
+  // bar chart
+  drawLidarBar();
+  document.getElementById('lidarStats').innerHTML=LIDAR_STATS[cur].map(r=>`<div class="row"><span class="n">${r[0]}</span><span class="v">${r[1]}</span></div>`).join('');
+  document.getElementById('lidarNote').textContent=LIDAR_NOTE[cur];
+}
+function drawLidarBar(){
+  const cv=document.getElementById('lidarBar'),cx=cv.getContext('2d'),W=cv.width,H=cv.height;
+  cx.clearRect(0,0,W,H);const sectors=['N','NE','E','SE','S','SW','W','NW'];
+  const vals={nominal:[98,96,99,97,95,98,96,97],stale:[98,96,99,97,95,98,96,97],conflict:[98,96,99,97,95,98,96,42],unknown:[0,0,0,0,0,0,0,0]};
+  const v=vals[cur];const bw=W/sectors.length-4;
+  cx.fillStyle='rgba(20,30,50,.06)';cx.fillRect(0,0,W,H);
+  v.forEach((val,i)=>{const x=i*(bw+4)+2,h=(val/100)*(H-20);
+    cx.fillStyle=val<60?'rgba(196,22,42,.7)':val<90?'rgba(161,92,0,.7)':'rgba(50,180,100,.7)';
+    cx.beginPath();cx.roundRect(x,H-h-14,bw,h,3);cx.fill();
+    cx.fillStyle='rgba(20,30,50,.5)';cx.font='9px system-ui';cx.textAlign='center';cx.fillText(sectors[i],x+bw/2,H-4)});
+}
+
+/* ---- CAMERA ---- */
+const CAM_STATS={nominal:[['Frame age','80 ms'],['Exposure','normal (128 avg)'],['Sharpness','high (var 920)'],['Saturated px','0.1 %']],stale:[['Frame age','450 ms'],['Exposure','last valid only'],['Sharpness','stale'],['Saturated px','unknown']],conflict:[['Frame age','90 ms'],['Exposure','SATURATED in zone'],['Sharpness','normal'],['Saturated px','8.4 %']],unknown:[['Frame age','1.9 s'],['Exposure','unknown'],['Sharpness','unknown'],['Saturated px','unknown']]};
+const CAM_NOTE={nominal:'Clean frame. Exposure normal. No conflicts.',stale:'Last valid frame was 450 ms ago. Values below are from a frozen frame.',conflict:'Exposure saturated in the polished floor zone. Bright patch detected as obstacle at 3.2 m. LiDAR returns clear at same location.',unknown:'No valid frame. Signal lost 1.9 s ago.'};
+function drawCamera(){
+  const cv=document.getElementById('camCv'),cx=cv.getContext('2d'),W=cv.width,H=cv.height;
+  cx.clearRect(0,0,W,H);
+  const detect=$('#cgDetect').checked, expose=$('#cgExpose').checked, grid=$('#cgGrid').checked;
+  const isStale=cur==='stale', isConflict=cur==='conflict', isUnknown=cur==='unknown';
+  // floor
+  const fl=cx.createLinearGradient(0,H*0.45,0,H);
+  fl.addColorStop(0,'#b8c4cc');fl.addColorStop(1,'#d0d8df');cx.fillStyle=fl;cx.fillRect(0,H*0.45,W,H*0.55);
+  // ceiling
+  const ceil=cx.createLinearGradient(0,0,0,H*0.2);
+  ceil.addColorStop(0,'#e8eef5');ceil.addColorStop(1,'#d0d8e0');cx.fillStyle=ceil;cx.fillRect(0,0,W,H*0.2);
+  // walls
+  const wall=cx.createLinearGradient(0,H*.2,0,H*.45);wall.addColorStop(0,'#cdd5de');wall.addColorStop(1,'#b8c2cc');cx.fillStyle=wall;cx.fillRect(0,H*.2,W,H*.25);
+  // racks
+  cx.fillStyle='#8a9ab0';cx.fillRect(0,H*.2,60,H*.25);cx.fillRect(W-60,H*.2,60,H*.25);
+  cx.fillStyle='#7a8898';
+  for(let i=0;i<3;i++){cx.fillRect(4,H*.22+i*(H*.07),52,H*.05);cx.fillRect(W-56,H*.22+i*(H*.07),52,H*.05)}
+  cx.fillStyle='rgba(100,115,135,.4)';cx.fillRect(55,H*.2,6,H*.25);cx.fillRect(W-61,H*.2,6,H*.25);
+  // depth grid
+  if(grid){cx.strokeStyle='rgba(80,100,120,.2)';cx.lineWidth=1;
+    for(let i=1;i<5;i++){cx.beginPath();cx.moveTo(0,H*.45+i*22);cx.lineTo(W,H*.45+i*22);cx.stroke()}
+    for(let i=-3;i<=3;i++){cx.beginPath();cx.moveTo(W/2+i*80,H*.45);cx.lineTo(W/2+i*40,H);cx.stroke()}}
+  // polished floor glare (conflict)
+  if((isConflict||cur==='nominal')&&expose){
+    if(isConflict){const g=cx.createRadialGradient(W*0.55,H*0.62,5,W*0.55,H*0.62,90);
+      g.addColorStop(0,'rgba(255,255,200,.9)');g.addColorStop(.4,'rgba(255,240,180,.6)');g.addColorStop(1,'rgba(255,240,180,0)');
+      cx.fillStyle=g;cx.beginPath();cx.ellipse(W*.55,H*.62,80,40,0,0,Math.PI*2);cx.fill();
+      // camera "false detection" box
+      if(detect){cx.strokeStyle='rgba(255,120,30,.9)';cx.lineWidth=2;cx.setLineDash([5,3]);cx.strokeRect(W*.38,H*.5,W*.3,H*.2);cx.setLineDash([]);
+        cx.fillStyle='rgba(255,120,30,1)';cx.font='bold 11px system-ui';cx.fillText('Camera detection (glare?)',W*.38,H*.5-4)}
+    } else {
+      // nominal: small subtle highlight on floor
+      const g=cx.createRadialGradient(W*.5,H*.7,0,W*.5,H*.7,40);g.addColorStop(0,'rgba(255,255,240,.25)');g.addColorStop(1,'rgba(255,255,240,0)');
+      cx.fillStyle=g;cx.beginPath();cx.ellipse(W*.5,H*.7,40,20,0,0,Math.PI*2);cx.fill()}}
+  // stale overlay
+  if(isStale){cx.fillStyle='rgba(30,40,60,.45)';cx.fillRect(0,0,W,H);
+    cx.fillStyle='rgba(255,255,255,.85)';cx.font='bold 16px system-ui';cx.textAlign='center';cx.fillText('Frame frozen - 450 ms ago',W/2,H/2-10);
+    cx.fillStyle='rgba(255,255,255,.55)';cx.font='12px system-ui';cx.fillText('Topic rate: 6 Hz (expected 30 Hz). QoS mismatch flagged.',W/2,H/2+12)}
+  // unknown overlay
+  if(isUnknown){cx.fillStyle='rgba(15,20,35,.75)';cx.fillRect(0,0,W,H);
+    cx.fillStyle='rgba(255,255,255,.75)';cx.font='bold 16px system-ui';cx.textAlign='center';cx.fillText('No signal - 1.9 s',W/2,H/2-6)}
+  // source watermark
+  cx.fillStyle='rgba(0,0,0,.4)';cx.font='10px system-ui';cx.textAlign='left';cx.fillText('Synthetic demo data',8,H-8);
+  document.getElementById('camStats').innerHTML=CAM_STATS[cur].map(r=>`<div class="row"><span class="n">${r[0]}</span><span class="v">${r[1]}</span></div>`).join('');
+  document.getElementById('camNote').textContent=CAM_NOTE[cur];
+  drawCamHist();
+}
+function drawCamHist(){
+  const cv=document.getElementById('camHist'),cx=cv.getContext('2d'),W=cv.width,H=cv.height;cx.clearRect(0,0,W,H);
+  cx.fillStyle='rgba(20,30,50,.06)';cx.fillRect(0,0,W,H);
+  // simulate histogram bars 0-255
+  const N=48,bw=W/N;
+  for(let i=0;i<N;i++){
+    let h;const norm=i/N;
+    if(cur==='conflict'&&i>40){h=(H-8)*(0.6+0.4*Math.pow((i-40)/8,2));} // spike at high values
+    else if(cur==='nominal'){h=(H-8)*(Math.exp(-Math.pow((norm-.45)/.2,2))*.9+Math.random()*.04);}
+    else if(cur==='unknown'){h=(H-8)*(.05+Math.random()*.05);}
+    else{h=(H-8)*(Math.exp(-Math.pow((norm-.45)/.18,2))*.85+Math.random()*.04);}
+    h=Math.max(2,Math.min(H-8,h));
+    const sat=cur==='conflict'&&i>43;
+    cx.fillStyle=sat?'rgba(196,22,42,.75)':'rgba(10,102,255,.55)';
+    cx.beginPath();cx.roundRect(i*bw+1,H-h-4,bw-2,h,2);cx.fill()}
+  cx.strokeStyle='rgba(196,22,42,.5)';cx.lineWidth=1.5;cx.setLineDash([3,3]);cx.beginPath();cx.moveTo(W-bw*3,0);cx.lineTo(W-bw*3,H);cx.stroke();cx.setLineDash([]);
+  cx.fillStyle='rgba(196,22,42,.7)';cx.font='9px system-ui';cx.textAlign='right';cx.fillText('Saturation',W-bw*3-3,12);
+}
+
+/* ---- PLOTS ---- */
+const PLOT_LEN=80;
+let plotBuf={camAge:[],lidAge:[],perc:[],unc:[],plan:[]},plotPaused=false;
+const PLOT_BASE={nominal:{camAge:80,lidAge:60,perc:92,unc:8,plan:90},stale:{camAge:450,lidAge:120,perc:68,unc:41,plan:61},conflict:{camAge:90,lidAge:70,perc:71,unc:36,plan:66},unknown:{camAge:1900,lidAge:9999,perc:0,unc:100,plan:0}};
+function tickPlot(){
+  if(plotPaused)return;
+  const b=PLOT_BASE[cur],n=v=>Math.max(0,b[v]+(Math.random()-.5)*8);
+  const nms=v=>Math.max(0,b[v]+(Math.random()-.5)*30);
+  const push=(a,v)=>{a.push(v);if(a.length>PLOT_LEN)a.shift()};
+  push(plotBuf.camAge,nms('camAge'));push(plotBuf.lidAge,nms('lidAge'));
+  push(plotBuf.perc,n('perc'));push(plotBuf.unc,n('unc'));push(plotBuf.plan,n('plan'));
+  drawPlots();
+}
+function drawPlots(){
+  const cv=document.getElementById('plotCv'),cx=cv.getContext('2d'),W=cv.width,H=cv.height;cx.clearRect(0,0,W,H);
+  cx.fillStyle='rgba(20,30,50,.04)';cx.fillRect(0,0,W,H);
+  const pad={t:12,b:24,l:48,r:12};const pw=W-pad.l-pad.r,ph=H-pad.t-pad.b;
+  // grid
+  cx.strokeStyle='rgba(20,30,50,.08)';cx.lineWidth=1;
+  [0,.25,.5,.75,1].forEach(f=>{const y=pad.t+ph*(1-f);cx.beginPath();cx.moveTo(pad.l,y);cx.lineTo(W-pad.r,y);cx.stroke();
+    cx.fillStyle='rgba(20,30,50,.4)';cx.font='9px system-ui';cx.textAlign='right';cx.fillText(f===0?'0':f===1?'100/2000':'',pad.l-4,y+3)});
+  // limit lines
+  const limY=(lim,max)=>pad.t+ph*(1-lim/max);
+  if($('#plCamAge').checked){cx.strokeStyle='rgba(10,102,255,.3)';cx.lineWidth=1;cx.setLineDash([4,3]);cx.beginPath();cx.moveTo(pad.l,limY(200,2000));cx.lineTo(W-pad.r,limY(200,2000));cx.stroke();cx.setLineDash([])}
+  if($('#plLidAge').checked){cx.strokeStyle='rgba(229,133,10,.3)';cx.lineWidth=1;cx.setLineDash([4,3]);cx.beginPath();cx.moveTo(pad.l,limY(200,2000));cx.lineTo(W-pad.r,limY(200,2000));cx.stroke();cx.setLineDash([])}
+  // series
+  const series=[
+    {key:'camAge',en:'plCamAge',col:'#0a66ff',max:2000},
+    {key:'lidAge',en:'plLidAge',col:'#e5850a',max:2000},
+    {key:'perc',en:'plPerc',col:'#1e8e4e',max:100},
+    {key:'unc',en:'plUnc',col:'#c4162a',max:100},
+    {key:'plan',en:'plPlan',col:'#7c3aed',max:100}
+  ];
+  series.forEach(s=>{if(!$('#'+s.en).checked)return;
+    const d=plotBuf[s.key];if(!d.length)return;
+    cx.strokeStyle=s.col;cx.lineWidth=2;cx.beginPath();
+    d.forEach((v,i)=>{const x=pad.l+pw*i/(PLOT_LEN-1),y=pad.t+ph*(1-Math.min(v,s.max)/s.max);i===0?cx.moveTo(x,y):cx.lineTo(x,y)});
+    cx.stroke()});
+  // x labels
+  cx.fillStyle='rgba(20,30,50,.35)';cx.font='9px system-ui';cx.textAlign='center';
+  cx.fillText('oldest',pad.l,H-6);cx.fillText('now',W-pad.r,H-6);
+  drawFreshHist();drawRadar();
+}
+function drawFreshHist(){
+  const cv=document.getElementById('freshHist'),cx=cv.getContext('2d'),W=cv.width,H=cv.height;cx.clearRect(0,0,W,H);
+  cx.fillStyle='rgba(20,30,50,.05)';cx.fillRect(0,0,W,H);
+  const buckets=10,bw=W/buckets,data=plotBuf.camAge;if(!data.length)return;
+  const counts=new Array(buckets).fill(0);data.forEach(v=>{const b=Math.min(buckets-1,Math.floor(v/200));counts[b]++});
+  const mx=Math.max(...counts)||1;
+  counts.forEach((c,i)=>{const h=(c/mx)*(H-20),x=i*bw+2;
+    const over=i>=1;cx.fillStyle=over?'rgba(196,22,42,.65)':'rgba(30,142,78,.65)';
+    cx.beginPath();cx.roundRect(x,H-h-14,bw-4,h,3);cx.fill();
+    cx.fillStyle='rgba(20,30,50,.5)';cx.font='9px system-ui';cx.textAlign='center';
+    cx.fillText((i*200)+'ms',x+(bw-4)/2,H-4)});
+  cx.strokeStyle='rgba(10,102,255,.4)';cx.lineWidth=1.5;cx.setLineDash([3,3]);cx.beginPath();const lx=bw+2;cx.moveTo(lx,0);cx.lineTo(lx,H-14);cx.stroke();cx.setLineDash([]);
+  cx.fillStyle='rgba(10,102,255,.7)';cx.font='9px system-ui';cx.textAlign='left';cx.fillText('200 ms limit',lx+3,12);
+}
+function drawRadar(){
+  const cv=document.getElementById('radarCv'),cx=cv.getContext('2d'),W=cv.width,H=cv.height;cx.clearRect(0,0,W,H);
+  const d=SC[cur].nesy,labels=d.map(n=>n[0]),vals=d.map(n=>n[1]/100);
+  const cx0=W/2,cy0=H/2,R=Math.min(W,H)/2-30,N=labels.length;
+  // grid
+  [.25,.5,.75,1].forEach(f=>{cx.strokeStyle=`rgba(20,30,50,${.06+f*.04})`;cx.lineWidth=1;cx.beginPath();
+    for(let i=0;i<N;i++){const a=(i/N)*Math.PI*2-Math.PI/2,x=cx0+Math.cos(a)*R*f,y=cy0+Math.sin(a)*R*f;i===0?cx.moveTo(x,y):cx.lineTo(x,y)}
+    cx.closePath();cx.stroke()});
+  // axes
+  cx.strokeStyle='rgba(20,30,50,.12)';cx.lineWidth=1;
+  for(let i=0;i<N;i++){const a=(i/N)*Math.PI*2-Math.PI/2;cx.beginPath();cx.moveTo(cx0,cy0);cx.lineTo(cx0+Math.cos(a)*R,cy0+Math.sin(a)*R);cx.stroke()}
+  // fill
+  cx.fillStyle='rgba(10,102,255,.12)';cx.strokeStyle='rgba(10,102,255,.7)';cx.lineWidth=2;cx.beginPath();
+  for(let i=0;i<N;i++){const a=(i/N)*Math.PI*2-Math.PI/2,v=vals[i],x=cx0+Math.cos(a)*R*v,y=cy0+Math.sin(a)*R*v;i===0?cx.moveTo(x,y):cx.lineTo(x,y)}
+  cx.closePath();cx.fill();cx.stroke();
+  // labels
+  cx.fillStyle='rgba(20,30,50,.7)';cx.font='bold 10px system-ui';cx.textAlign='center';
+  for(let i=0;i<N;i++){const a=(i/N)*Math.PI*2-Math.PI/2,x=cx0+Math.cos(a)*(R+16),y=cy0+Math.sin(a)*(R+16)+4;cx.fillText(labels[i],x,y)}
+}
+
+/* ---- DATA INPUT ---- */
+const MANUAL_FIELDS=[{id:'camera_age_ms',label:'Camera age (ms)',def:{nominal:80,stale:450,conflict:90,unknown:1900}},
+  {id:'lidar_age_ms',label:'LiDAR age (ms)',def:{nominal:60,stale:120,conflict:70,unknown:9999}},
+  {id:'tf_age_ms',label:'TF age (ms)',def:{nominal:45,stale:45,conflict:45,unknown:45}},
+  {id:'localization_std_cm',label:'Localization std dev (cm)',def:{nominal:3.2,stale:3.2,conflict:3.4,unknown:null}},
+  {id:'battery_pct',label:'Battery reserve (%)',def:{nominal:78,stale:78,conflict:78,unknown:78}},
+];
+function buildManualFields(){
+  document.getElementById('manualFields').innerHTML=MANUAL_FIELDS.map(f=>{
+    const v=f.def[cur]??'';
+    return `<div class="row"><label class="n" for="mf_${f.id}">${f.label}</label><input type="text" id="mf_${f.id}" value="${v}" style="width:90px;font:inherit;padding:4px 7px;border-radius:8px;border:1px solid var(--line)"></div>`
+  }).join('')
+}
+document.getElementById('applyManual').onclick=()=>{
+  const vals={};MANUAL_FIELDS.forEach(f=>{const v=document.getElementById('mf_'+f.id)?.value;if(v!==''&&!isNaN(+v))vals[f.id]=+v});
+  document.getElementById('manualMsg').textContent='Applied: '+Object.entries(vals).map(([k,v])=>`${k}=${v}`).join(', ')+'. Affects evidence view only.';
+};
+document.getElementById('resetManual').onclick=()=>{buildManualFields();document.getElementById('manualMsg').textContent='Reset to scenario values.'};
+document.getElementById('parseJson').onclick=()=>{
+  const raw=document.getElementById('jsonPaste').value.trim();
+  const out=document.getElementById('jsonOut');try{const p=JSON.parse(raw);out.textContent='Parsed OK:\n'+JSON.stringify(p,null,2);
+  }catch(e){out.textContent='Parse error: '+e.message}};
+document.getElementById('clearJson').onclick=()=>{document.getElementById('jsonPaste').value='';document.getElementById('jsonOut').textContent=''};
+const dz=document.getElementById('dropZone');
+['dragenter','dragover'].forEach(e=>dz.addEventListener(e,ev=>{ev.preventDefault();dz.classList.add('on')}));
+['dragleave','drop'].forEach(e=>dz.addEventListener(e,ev=>{ev.preventDefault();dz.classList.remove('on')}));
+dz.addEventListener('drop',ev=>{const f=ev.dataTransfer.files[0];if(!f)return;
+  if(f.size>5*1024*1024){document.getElementById('fileOut').textContent='File too large (max 5 MB).';document.getElementById('fileOut').style.display='block';return}
+  const r=new FileReader();r.onload=e=>{const txt=e.target.result;const fo=document.getElementById('fileOut');
+    fo.style.display='block';fo.textContent='File: '+f.name+' ('+f.size+' bytes)\n\n'+txt.slice(0,2000)+(txt.length>2000?'\n...truncated':'');
+    // parse JSONL
+    const rows=[];txt.split('\n').filter(Boolean).forEach(l=>{try{rows.push(JSON.parse(l))}catch{}});
+    if(rows.length){document.getElementById('fileRows').innerHTML='<p class="note">'+rows.length+' rows parsed. First row: <code>'+JSON.stringify(rows[0]).slice(0,120)+'</code></p>'}
+  };r.readAsText(f)});
+dz.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' ')dz.click()});
+
+/* ---- FLEET ---- */
+const ROBOTS=[
+  {id:'RB-01',aisle:'A',mission:'Pickup bin 12',state:'Autonomous',nesy:94,camMs:75,lidMs:58,last:'Contract check pass',fw:'v2.4.1'},
+  {id:'RB-02',aisle:'A',mission:'Return to dock',state:'Autonomous',nesy:91,camMs:82,lidMs:64,last:'Mission complete',fw:'v2.4.1'},
+  {id:'RB-03',aisle:'B',mission:'Pickup bin 34',state:'Degraded',nesy:71,camMs:420,lidMs:95,last:'Camera freshness 420 ms, limit 200 ms',fw:'v2.4.1'},
+  {id:'RB-04',aisle:'B',mission:'Pickup bin 42',state:'Supervised',nesy:66,camMs:90,lidMs:70,last:'Camera/LiDAR conflict at 3.2 m',fw:'v2.4.1'},
+  {id:'RB-05',aisle:'C',mission:'Inventory scan',state:'Autonomous',nesy:88,camMs:91,lidMs:78,last:'Contract check pass',fw:'v2.4.1'},
+  {id:'RB-06',aisle:'C',mission:'Pickup bin 67',state:'Unknown',nesy:0,camMs:1900,lidMs:null,last:'LiDAR stream lost 2.4 s ago',fw:'v2.4.0'},
+  {id:'RB-07',aisle:'D',mission:'Charging',state:'Autonomous',nesy:96,camMs:68,lidMs:55,last:'Battery 22% - docked',fw:'v2.4.1'},
+  {id:'RB-08',aisle:'D',mission:'Pickup bin 89',state:'Autonomous',nesy:90,camMs:88,lidMs:72,last:'Contract check pass',fw:'v2.4.0'},
+];
+const FLEET_LOG=[
+  {t:'14:32:13',robot:'Fleet',msg:'Anomaly on RB-04 during v2.4.1 rollout - rollout flag raised',sev:'bad'},
+  {t:'14:32:12',robot:'RB-04',msg:'Camera/LiDAR conflict at 3.2 m - Autonomous to Degraded',sev:'warn'},
+  {t:'14:31:45',robot:'RB-03',msg:'Camera freshness 420 ms, limit 200 ms - Degraded',sev:'warn'},
+  {t:'14:31:10',robot:'RB-06',msg:'LiDAR stream lost - state set to Unknown',sev:'bad'},
+  {t:'14:30:00',robot:'Fleet',msg:'Firmware v2.4.1 rollout started: 6/8 robots targeted',sev:'ok'},
+  {t:'14:28:30',robot:'RB-01',msg:'Mission complete - aisle A bin 12 delivered',sev:'ok'},
+  {t:'14:27:00',robot:'RB-05',msg:'Contract check pass - aisle C nominal',sev:'ok'},
+  {t:'14:25:50',robot:'RB-07',msg:'Battery 22% - docked for charge',sev:'ok'},
+];
+const SEV_C={ok:'var(--auto)',warn:'var(--deg)',bad:'var(--blk)'};
+let rolloutHalted=false;
+window.selectRobot=function(i){
+  const r=ROBOTS[i];
+  const map={Autonomous:'nominal',Degraded:'stale',Supervised:'conflict',Unknown:'unknown',Blocked:'unknown'};
+  cur=map[r.state]||'nominal';$('#scn').value=cur;render();drawLidar();drawCamera();buildManualFields();
+  $$('.dock button').forEach(x=>x.classList.remove('on'));
+  document.querySelector('.dock button[data-v="live"]').classList.add('on');
+  $$('.view').forEach(v=>v.classList.remove('on'));$('#v-live').classList.add('on');
+};
+function drawFleet(){
+  const counts={};ROBOTS.forEach(r=>counts[r.state]=(counts[r.state]||0)+1);
+  const bad=ROBOTS.filter(r=>['Supervised','Unknown','Blocked'].includes(r.state));
+  const health=Math.round(ROBOTS.filter(r=>r.state==='Autonomous').length/ROBOTS.length*100);
+  const bp=document.getElementById('fleetBannerPanel');
+  bp.style.background=bad.length?'color-mix(in srgb,var(--sup) 7%,rgba(255,255,255,.74))':'rgba(255,255,255,.74)';
+  document.getElementById('fleetBanner').innerHTML=`<div class="fbanner">
+    ${bad.length?`<span style="font-weight:700;color:var(--sup)">&#9888; ${bad.length} robot${bad.length>1?'s':''} need attention</span><span style="width:1px;height:18px;background:var(--line);display:inline-block"></span>`:''}
+    <span style="font-weight:650">Fleet health <span style="color:${health>=75?'var(--auto)':'var(--deg)'}">${health}%</span></span>
+    ${Object.entries(counts).map(([s,n])=>`<span class="chip" data-s="${s}" style="font-size:11px;padding:2px 9px 2px 3px"><i style="width:14px;height:14px;font-size:9px">${ICON[s]}</i>${n} ${s}</span>`).join('')}
+    <span style="flex:1"></span>
+    <span class="badge">Synthetic demo data</span>
+    <span class="badge">Rollout: v2.4.0 to v2.4.1</span>
+  </div>`;
+  document.getElementById('robotCards').innerHTML=ROBOTS.map((r,i)=>{
+    const isAlert=['Supervised','Unknown','Blocked'].includes(r.state);
+    const scol={Autonomous:'var(--auto)',Degraded:'var(--deg)',Supervised:'var(--sup)',Unknown:'var(--unk)',Blocked:'var(--blk)'}[r.state];
+    const cn=Math.round(r.camMs+(Math.random()-.5)*5);
+    const ln=r.lidMs!=null?Math.round(r.lidMs+(Math.random()-.5)*4):null;
+    return `<div class="fcard${isAlert?' alert':''}" data-s="${r.state}" style="--c:${scol}" onclick="selectRobot(${i})" role="button" tabindex="0" aria-label="${r.id} ${r.state}">
+      <div class="cid">
+        <span class="chip" data-s="${r.state}" style="font-size:10px;padding:2px 7px 2px 2px"><i style="width:13px;height:13px;font-size:8px">${ICON[r.state]}</i>${r.state}</span>
+        <b>${r.id}</b><span class="note">Aisle ${r.aisle}</span>
+      </div>
+      <div class="note" style="font-size:11px;margin-bottom:3px">${r.mission}</div>
+      <div style="font-size:11px;color:${isAlert?'var(--sup)':'var(--ink2)'}">${r.last}</div>
+      <div class="fmetrics">
+        <span><b style="color:${r.camMs<200?'var(--ink)':'var(--blk)'}">${cn} ms</b>Camera</span>
+        <span><b style="color:${ln!=null&&ln<200?'var(--ink)':'var(--blk)'}">${ln!=null?ln+' ms':'--'}</b>LiDAR</span>
+        <span><b>${r.nesy}%</b>NeSyConf</span>
+        <span><b style="color:${r.fw==='v2.4.1'?'var(--auto)':'var(--unk)'}">${r.fw}</b>FW</span>
+      </div>
+    </div>`;
+  }).join('');
+  const updated=ROBOTS.filter(r=>r.fw==='v2.4.1').length;
+  const flagged=ROBOTS.filter(r=>r.fw==='v2.4.1'&&['Degraded','Supervised','Unknown'].includes(r.state)).length;
+  document.getElementById('rolloutStatus').innerHTML=
+    `<div class="rrow"><div class="rdot" style="background:var(--auto)"></div><span>${updated}/8 robots on v2.4.1</span></div>
+     <div class="rrow"><div class="rdot" style="background:var(--unk)"></div><span>2/8 still on v2.4.0</span></div>
+     ${flagged?`<div class="rrow"><div class="rdot" style="background:var(--blk)"></div><span style="color:var(--blk);font-weight:600">${flagged} robot${flagged>1?'s':''} degraded after v2.4.1 update</span></div>`:''}
+     <div class="rrow"><div class="rdot" style="background:${rolloutHalted?'var(--blk)':'var(--deg)'}"></div><span>Rollout: <b>${rolloutHalted?'HALTED by operator':'In progress'}</b></span></div>`;
+  document.getElementById('haltBtn').disabled=rolloutHalted;
+  document.getElementById('resumeBtn').disabled=!rolloutHalted;
+  document.getElementById('fleetLog').innerHTML=FLEET_LOG.map(e=>`
+    <div class="ev on"><b>${e.t}</b> <span style="color:${SEV_C[e.sev]};font-weight:600">${e.robot}</span> ${e.msg}</div>`).join('');
+}
+document.getElementById('haltBtn').onclick=()=>{rolloutHalted=true;document.getElementById('rolloutMsg').textContent='Rollout halted at 6/8. RB-07 and RB-08 stay on v2.4.0. Decision logged, no robot commanded.';drawFleet()};
+document.getElementById('resumeBtn').onclick=()=>{rolloutHalted=false;document.getElementById('rolloutMsg').textContent='Rollout resumed. Watch RB-03 and RB-04 closely.';drawFleet()};
+
+/* ---- WIRE UP ---- */
+// re-render sensor canvases when scenario changes
+const _origScn=$('#scn').onchange;
+$('#scn').onchange=e=>{cur=e.target.value;render();drawLidar();drawCamera();buildManualFields();if($('#v-fleet').classList.contains('on'))drawFleet()};
+$('#lgRays,#lgWalls,#lgCam,#lgFloor').forEach(el=>el?.addEventListener('change',drawLidar));
+$('#cgDetect,#cgExpose,#cgGrid').forEach(el=>el?.addEventListener('change',drawCamera));
+$('#plCamAge,#plLidAge,#plPerc,#plUnc,#plPlan').forEach(el=>el?.addEventListener('change',drawPlots));
+document.getElementById('plotPause').onclick=()=>{plotPaused=!plotPaused;document.getElementById('plotPause').textContent=plotPaused?'Resume':'Pause'};
+document.getElementById('plotClear').onclick=()=>{Object.keys(plotBuf).forEach(k=>plotBuf[k]=[])};
+// seed the plot buffer
+for(let i=0;i<PLOT_LEN;i++)tickPlot();
+// animate
+setInterval(()=>{
+  const lv=document.getElementById('v-lidar');const cv2=document.getElementById('v-camera');
+  const pv=document.getElementById('v-plots');const fv=document.getElementById('v-fleet');
+  if(lv?.classList.contains('on'))drawLidar();
+  if(cv2?.classList.contains('on'))drawCamera();
+  if(pv?.classList.contains('on')){tickPlot();}
+  if(fv?.classList.contains('on'))drawFleet();
+},200);
+// draw on first activate
+$$('.dock button[data-v]').forEach(b=>{const orig=b.onclick;b.onclick=()=>{orig?.call(b);
+  const v=b.dataset.v;
+  if(v==='lidar')drawLidar();
+  if(v==='camera')drawCamera();
+  if(v==='plots'){for(let i=0;i<PLOT_LEN;i++)tickPlot();drawPlots();}
+  if(v==='input')buildManualFields();
+  if(v==='fleet')drawFleet();
+}});
+buildManualFields();
+render();
+</script>
+</body>
+</html>
